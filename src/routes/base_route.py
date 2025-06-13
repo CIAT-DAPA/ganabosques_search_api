@@ -38,7 +38,7 @@ def generate_read_only_router(
         search_ids = parse_object_ids(ids)
         matches = collection.objects(id__in=search_ids)
         return [serialize(m) for m in matches]
-    get_by_ids.__doc__ = f"Retrieve multiple {pretty_name} records by their MongoDB ObjectIds."
+    get_by_ids.__doc__ = f"Retrieve one or multiple {pretty_name} records by their MongoDB ObjectIds."
     
     if include_endpoints and "by-name" in include_endpoints:
         @router.get("/by-name", response_model=List[schema_model])

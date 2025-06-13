@@ -13,11 +13,11 @@ router = APIRouter(
 )
 
 class Adm2Schema(BaseModel):
-    id: str = Field(..., description="ID interno de MongoDB")
-    ext_id: Optional[str] = Field(None, description="ID externo del nivel adm2")
-    name: Optional[str] = Field(None, description="Nombre del nivel adm2")
-    adm1_id: Optional[str] = Field(None, description="ID del nivel adm1 al que pertenece")
-    adm1_name: Optional[str] = Field(None, description="Nombre del nivel adm1 al que pertenece")
+    id: str = Field(..., description="Internal MongoDB ID")
+    ext_id: Optional[str] = Field(None, description="External administrative region ID")
+    name: Optional[str] = Field(None, description="Name of the administrative region")
+    adm1_id: Optional[str] = Field(None, description="ID of the adm1 level to which it belongs")
+    adm1_name: Optional[str] = Field(None, description="Name of the level adm1 to which it belongs")
 
     class Config:
         from_attributes = True
@@ -49,10 +49,10 @@ def get_all_adm2():
 
 @router.get("/by-ids", response_model=List[Adm2Schema])
 def get_adm2_by_ids(
-    ids: str = Query(..., description="Lista de ObjectId válidos separados por coma. Ejemplo: ?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06")
+    ids: str = Query(..., description="Comma-separated list of IDs. Example: ?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06")
 ):
     """
-    Obtener múltiples registros Adm1 por sus MongoDB ObjectIds.
+    Retrieve one or multiple adm2 records by their MongoDB ObjectIds.
     """
     search_ids = parse_object_ids(ids)
     matches = Adm2.objects(id__in=search_ids)
@@ -85,14 +85,14 @@ def get_adm2_by_adm1_ids(
 
 @router.get("/paged/", response_model=PaginatedResponse[Adm2Schema])
 def get_adm2_paginated(
-       page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
+    page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
     limit: int = Query(10, ge=1, description="Maximum records per page"),
     skip: Optional[int] = Query(None, ge=0, description="Number of records to skip. If defined, overrides 'page' parameter"),
     search: Optional[str] = Query(None, description="Comma-separated search terms for partial, case-insensitive match"),
     search_fields: Optional[str] = Query(None, description="Comma-separated list of fields to search (e.g., name,ext_id)"),
     order_by: Optional[str] = Query(None, description="Comma-separated fields to sort by. Use '-' for descending (e.g., name,-ext_id)")
 ):
-    """Retrieve paginated Adm1 records with optional search and sorting."""
+    """Retrieve paginated Adm2 records with optional search and sorting."""
 
     base_query = Adm2.objects
     allowed_fields = {"name", "ext_id"}
