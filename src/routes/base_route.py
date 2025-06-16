@@ -6,6 +6,10 @@ from tools.pagination import build_paginated_response, PaginatedResponse
 from tools.utils import parse_object_ids, build_search_query
 import re
 
+MAX_TERMS = 5
+MAX_TERM_LENGTH = 25
+MAX_COMBINATIONS = 50
+            
 def generate_read_only_router(
     *,
     prefix: str,
@@ -43,9 +47,10 @@ def generate_read_only_router(
     if include_endpoints and "by-name" in include_endpoints:
         @router.get("/by-name", response_model=List[schema_model])
         def get_by_name(
-            name: str = Query(..., description="One or more comma-separated names for case-insensitive partial search")
+            name: str = Query(..., description="One or more comma-separated names for case-insensitive partial search. (maximum {MAX_TERMS} terms, each up to {MAX_TERM_LENGTH} characters)")
         ):
-            terms = [term.strip() for term in name.split(",") if term.strip()]
+            terms = [term.strip()[:MAX_TERM_LENGTH] for term in name.split(",") if term.strip()]
+            terms = terms[:MAX_TERMS]
             query = build_search_query(terms, ["name"])
             matches = collection.objects(__raw__=query)
             return [serialize(m) for m in matches]
@@ -57,7 +62,7 @@ def generate_read_only_router(
             page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
             limit: int = Query(10, ge=1, description="Maximum records per page"),
             skip: Optional[int] = Query(None, ge=0, description="Number of records to skip. Overrides 'page' if defined"),
-            search: Optional[str] = Query(None, description="Comma-separated search terms for partial match"),
+            search: Optional[str] = Query(None, description=f"Comma-separated search terms for partial match. (maximum {MAX_TERMS} terms, each up to {MAX_TERM_LENGTH} characters)"),
             search_fields: Optional[str] = Query(None, description=f"Comma-separated fields to search. {', '.join(allowed_fields)}"),
             order_by: Optional[str] = Query(None, description=f"Comma-separated fields to sort. Use '-' for descending {', '.join(allowed_fields)}")
         ):
@@ -68,7 +73,11 @@ def generate_read_only_router(
 
             # Search logic
             if search and fields:
-                terms = [t.strip() for t in search.split(",") if t.strip()]
+                terms = [t.strip()[:MAX_TERM_LENGTH] for t in search.split(",") if t.strip()]
+                terms = terms[:MAX_TERMS]
+
+                if len(terms) * len(fields) > MAX_COMBINATIONS:
+                    raise HTTPException(400, detail="Search is too broad. Reduce number of terms or fields.")
                 base_query = base_query(__raw__=build_search_query(terms, fields))
 
             # Order logic

@@ -60,7 +60,7 @@ router = generate_read_only_router(
     tags=["Spatial data"],
     collection=Deforestation,
     schema_model=DeforestationSchema,
-    allowed_fields=["deforestation_source", "deforestation_type", "name", "year_start", "year_end"],
+    allowed_fields=["deforestation_source", "deforestation_type", "name"],
     serialize_fn=serialize_deforestation,
     include_endpoints=["paged", "by-name"]
 )
