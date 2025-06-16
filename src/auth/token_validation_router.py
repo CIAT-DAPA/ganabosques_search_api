@@ -9,11 +9,7 @@ load_dotenv()
 
 router = APIRouter(tags=["Authentication"], prefix="/auth")
 
-
-
 security = HTTPBearer()
-
-
 
 @router.get("/token/validate", summary="Validate a keycloak token")
 def validate_local_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
