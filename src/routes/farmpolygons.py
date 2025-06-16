@@ -86,8 +86,7 @@ router = generate_read_only_router(
     collection=FarmPolygons,
     schema_model=FarmPolygonsSchema,
     allowed_fields=[],
-    serialize_fn=serialize_farm_polygon,
-    include_endpoints=["paged"]
+    serialize_fn=serialize_farm_polygon
 )
 
 @router.get("/by-farm", response_model=List[FarmPolygonsSchema])
@@ -101,3 +100,21 @@ def get_farmpolygons_by_farm_ids(
     search_ids = parse_object_ids(ids)
     matches = FarmPolygons.objects(farm_id__in=search_ids)
     return [serialize_farm_polygon(poly) for poly in matches]
+
+@router.get("/paged/", response_model=PaginatedResponse[FarmPolygonsSchema])
+def get_farmpolygon_paginated(
+    page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
+    limit: int = Query(10, ge=1, description="Maximum records per page"),
+    skip: Optional[int] = Query(None, ge=0, description="Number of records to skip. If defined, overrides 'page' parameter"),
+):
+    """Retrieve paginated Farm Polygons records."""
+    base_query = FarmPolygons.objects
+
+    return build_paginated_response(
+        base_query=base_query,
+        schema_model=FarmPolygonsSchema,
+        page=page,
+        limit=limit,
+        skip=skip,
+        serialize_fn=serialize_farm_polygon
+    )
