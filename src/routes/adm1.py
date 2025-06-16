@@ -63,6 +63,16 @@ def get_adm1_by_name(
     matches = Adm1.objects(__raw__=query)
     return [serialize_adm1(adm) for adm in matches]
 
+@router.get("/by-extid", response_model=List[Adm1Schema])
+def get_adm1_by_extid(
+    ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
+):
+    """Search Adm1 records by ext_id with partial, case-insensitive match."""
+    terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
+    query = build_search_query(terms, ["ext_id"])
+    matches = Adm1.objects(__raw__=query)
+    return [serialize_adm1(adm) for adm in matches]
+
 @router.get("/paged/", response_model=PaginatedResponse[Adm1Schema])
 def get_adm1_paginated(
     page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),

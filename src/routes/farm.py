@@ -86,3 +86,55 @@ def get_farm_by_adm3_ids(
     search_ids = parse_object_ids(ids)
     matches = Farm.objects(adm3_id__in=search_ids)
     return [serialize_farm(adm) for adm in matches]
+
+# Lista de opciones válidas del enum Source
+valid_sources_str = ", ".join([s.value for s in Source])
+
+@router.get("/by-extid", response_model=List[FarmSchema])
+def get_farm_by_extid(
+    ext_codes: Optional[str] = Query(
+        None,
+        description="Comma-separated list of ext_code values to search in ext_id.ext_code"
+    ),
+    sources: Optional[str] = Query(
+        None,
+        description=f"Comma-separated list of source values to search in ext_id.source. Valid options: {valid_sources_str}"
+    )
+):
+    """
+    Retrieve Farm records that match one or more ext_id.ext_code or ext_id.source values.
+    At least one of the two parameters must be provided.
+
+    Examples:
+    - /farm/by-ext-id?ext_codes=SIT-2022-0001,SIT-2023-0005
+    - /farm/by-ext-id?sources=SIT_CODE,SAGARI
+    - /farm/by-ext-id?ext_codes=SIT-2022-0001&sources=SIT_CODE
+    """
+    if not ext_codes and not sources:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of 'ext_codes' or 'sources' must be provided."
+        )
+
+    ext_conditions = []
+
+    if ext_codes:
+        ext_code_list = [re.escape(code.strip()) for code in ext_codes.split(",") if code.strip()]
+        ext_conditions.append({"ext_id": {"$elemMatch": {"ext_code": {"$in": ext_code_list }}}})
+
+    if sources:
+        raw_sources = [s.strip() for s in sources.split(",") if s.strip()]
+        invalid_sources = [s for s in raw_sources if s not in Source.__members__]
+        if invalid_sources:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid source(s): {', '.join(invalid_sources)}. "
+                       f"Valid options: {valid_sources_str}"
+            )
+        enum_sources = [re.escape(Source[s].value) for s in raw_sources]
+        ext_conditions.append({
+            "ext_id": {"$elemMatch": {"source": {"$in": enum_sources }}}})
+
+    query = {"$and": ext_conditions} if len(ext_conditions) == 2 else ext_conditions[0]
+    farms = Farm.objects(__raw__=query)
+    return [serialize_farm(farm) for farm in farms]

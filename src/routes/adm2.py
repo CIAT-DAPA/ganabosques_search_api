@@ -71,6 +71,16 @@ def get_adm2_by_name(
     matches = Adm2.objects(__raw__=query)
     return [serialize_adm2(adm) for adm in matches]
 
+@router.get("/by-extid", response_model=List[Adm2Schema])
+def get_adm1_by_extid(
+    ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
+):
+    """Search Adm2 records by ext_id with partial, case-insensitive match."""
+    terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
+    query = build_search_query(terms, ["ext_id"])
+    matches = Adm2.objects(__raw__=query)
+    return [serialize_adm2(adm) for adm in matches]
+
 @router.get("/by-adm1", response_model=List[Adm2Schema])
 def get_adm2_by_adm1_ids(
     ids: str = Query(..., description="Comma-separated Adm1 IDs to filter Adm2 records")

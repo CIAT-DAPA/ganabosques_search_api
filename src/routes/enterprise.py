@@ -99,4 +99,55 @@ def get_enterprise_by_adm2_ids(
             detail=f"IDs no válidos: {', '.join(invalid_ids)}"
         )
     matches = Enterprise.objects(adm3_id__in=search_ids)
-    return [serialize_enterprise(adm) for adm in matches]
+    return [serialize_enterprise(enterprise) for enterprise in matches]
+
+valid_labels_str = ", ".join([l.name for l in Label])
+
+@router.get("/by-extid", response_model=List[EnterpriseSchema])
+def get_enterprise_by_extid(
+    ext_codes: Optional[str] = Query(
+        None,
+        description="Comma-separated ext_code values to filter in ext_id.ext_code"
+    ),
+    labels: Optional[str] = Query(
+        None,
+        description=f"Comma-separated label values to filter in ext_id.label. Valid options: {valid_labels_str}"
+    )
+):
+    """
+    Retrieve Enterprise records that match one or more ext_id.ext_code or ext_id.label values.
+    At least one of the two parameters must be provided.
+
+    Examples:
+    - /enterprise/by-ext-id?ext_codes=CA-2024-007
+    - /enterprise/by-ext-id?labels=PRODUCTIONUNIT_ID
+    - /enterprise/by-ext-id?ext_codes=CA-2024-007&labels=PRODUCTIONUNIT_ID
+    """
+    if not ext_codes and not labels:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of 'ext_codes' or 'labels' must be provided."
+        )
+
+    query_conditions = []
+
+    if ext_codes:
+        ext_code_list = [re.escape(code.strip()) for code in ext_codes.split(",") if code.strip()]
+        query_conditions.append({"ext_id": {"$elemMatch": {"ext_code": {"$in": ext_code_list}}}})
+
+    if labels:
+        raw_labels = [label.strip() for label in labels.split(",") if label.strip()]
+        invalid_labels = [l for l in raw_labels if l not in Label.__members__]
+        if invalid_labels:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid label(s): {', '.join(invalid_labels)}. "
+                       f"Valid options: {valid_labels_str}"
+            )
+        enum_labels = [re.escape(Label[l].value) for l in raw_labels]
+        query_conditions.append({"ext_id": {"$elemMatch": {"label": {"$in": enum_labels}}}})
+
+    query = {"$and": query_conditions} if len(query_conditions) == 2 else query_conditions[0]
+
+    enterprises = Enterprise.objects(__raw__=query)
+    return [serialize_enterprise(e) for e in enterprises]

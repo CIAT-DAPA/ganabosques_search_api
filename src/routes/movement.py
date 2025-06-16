@@ -91,3 +91,13 @@ router = generate_read_only_router(
     serialize_fn=serialize_movement,
     include_endpoints=["paged"]
 )
+
+@router.get("/by-extid", response_model=List[MovementSchema])
+def get_movement_by_extid(
+    ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
+):
+    """Search movement records by ext_id with partial, case-insensitive match."""
+    terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
+    query = build_search_query(terms, ["ext_id"])
+    matches = Movement.objects(__raw__=query)
+    return [serialize_movement(movement) for movement in matches]
