@@ -77,7 +77,7 @@ def get_adm3_by_name(
     return [serialize_adm3(adm) for adm in matches]
 
 @router.get("/by-extid", response_model=List[Adm3Schema])
-def get_adm1_by_extid(
+def get_adm3_by_extid(
     ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
 ):
     """Search Adm3 records by ext_id with partial, case-insensitive match."""
