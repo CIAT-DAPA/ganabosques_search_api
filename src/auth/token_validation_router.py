@@ -16,9 +16,9 @@ def validate_local_token(credentials: HTTPAuthorizationCredentials = Depends(sec
     token = credentials.credentials
     unverified_header = jwt.get_unverified_header(token)
 
-    KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
-    REALM_NAME = os.getenv("REALM_NAME", "aclimate")
-    CLIENT_ID = os.getenv("CLIENT_ID", "dummy-client")
+    KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
+    REALM_NAME = os.getenv("KEYCLOAK_REALM")
+    CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
 
     jwks_url = f"{KEYCLOAK_URL}/realms/{REALM_NAME}/protocol/openid-connect/certs"
     response = requests.get(jwks_url)

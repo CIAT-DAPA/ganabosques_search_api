@@ -13,7 +13,7 @@ class ClientCredentials(BaseModel):
 @router.post("/get-client-token", summary="Get a Keycloak token using client credentials")
 async def get_token(body: ClientCredentials):
     KEYCLOAK_BASE_URL = os.getenv("KEYCLOAK_URL")
-    REALM = os.getenv("REALM_NAME")
+    REALM = os.getenv("KEYCLOAK_REALM")
     TOKEN_ENDPOINT = f"{KEYCLOAK_BASE_URL}/realms/{REALM}/protocol/openid-connect/token"
     data = {
         "grant_type": "client_credentials",
