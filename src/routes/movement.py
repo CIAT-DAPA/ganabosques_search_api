@@ -18,7 +18,7 @@ class SourceMovementSchema(BaseModel):
 
 class ClassificationSchema(BaseModel):
     label: Optional[str] = Field(None, description="Label of classification")
-    amount: Optional[str] = Field(None, description="Amount associated with label")
+    amount: Optional[int] = Field(None, description="Amount associated with label")
 
 
 class MovementSchema(BaseModel):
@@ -33,7 +33,7 @@ class MovementSchema(BaseModel):
     enterprise_id_origin: Optional[str] = Field(None, description="Origin enterprise ID")
     enterprise_id_destination: Optional[str] = Field(None, description="Destination enterprise ID")
     movement: List[ClassificationSchema] = Field(default_factory=list, description="Classification movements")
-    species: Optional[Species] = Field(None, description="Species involved in the movement")
+    species: Species = Field(..., description="Species involved in the movement")
 
     class Config:
         from_attributes = True
@@ -89,15 +89,15 @@ router = generate_read_only_router(
     schema_model=MovementSchema,
     allowed_fields=["ext_id", "species", "type_origin", "type_destination"],
     serialize_fn=serialize_movement,
-    include_endpoints=["paged"]
+    include_endpoints=["paged", "by-extid"]
 )
 
-@router.get("/by-extid", response_model=List[MovementSchema])
-def get_movement_by_extid(
-    ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
-):
-    """Search movement records by ext_id with partial, case-insensitive match."""
-    terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
-    query = build_search_query(terms, ["ext_id"])
-    matches = Movement.objects(__raw__=query)
-    return [serialize_movement(movement) for movement in matches]
+# @router.get("/by-extid", response_model=List[MovementSchema])
+# def get_movement_by_extid(
+#     ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
+# ):
+#     """Search movement records by ext_id with partial, case-insensitive match."""
+#     terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
+#     query = build_search_query(terms, ["ext_id"])
+#     matches = Movement.objects(__raw__=query)
+#     return [serialize_movement(movement) for movement in matches]
