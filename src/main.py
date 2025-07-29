@@ -22,6 +22,7 @@ from routes.adm3risk import router as adm3risk
 from routes.farmrisk import router as farmrisk
 from routes.enterpriserisk import router as enterpriserisk
 from routes.movement import router as movement
+from routes.enum import router as enum
 
 app = FastAPI(
     title="Ganabosques search api"
@@ -79,6 +80,8 @@ app.include_router(enterpriserisk)
 
 # Movements
 app.include_router(movement)
+
+app.include_router(enum)
 
 
 
