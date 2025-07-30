@@ -94,7 +94,7 @@ def get_adm3_by_adm2_ids(
     Retrieve Adm3 records that belong to one or more Adm2 IDs.
     Example: /adm3/by-adm2?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
     """
-    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    id_list = parse_object_ids(ids)
     matches = Adm3.objects(adm2_id__in=id_list)
     return [serialize_adm3(adm) for adm in matches]
 

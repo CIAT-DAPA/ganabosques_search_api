@@ -23,6 +23,7 @@ from routes.farmrisk import router as farmrisk
 from routes.enterpriserisk import router as enterpriserisk
 from routes.movement import router as movement
 from routes.enum import router as enum
+from tools.logger import logger
 
 app = FastAPI(
     title="Ganabosques search api"
@@ -32,9 +33,9 @@ load_dotenv()
 
 try:
     init_db()
-    print("✅ Conexión a MongoDB exitosa")
+    logger.info("Conexión a MongoDB exitosa")
 except ServerSelectionTimeoutError as e:
-    print("❌ No se pudo conectar con MongoDB al iniciar:", e)
+    logger.exception("No se pudo conectar con MongoDB al iniciar")
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,6 +82,7 @@ app.include_router(enterpriserisk)
 # Movements
 app.include_router(movement)
 
+# Enumns
 app.include_router(enum)
 
 
