@@ -6,15 +6,13 @@ from bson import ObjectId
 from ganabosques_orm.collections.movement import Movement
 from ganabosques_orm.enums.species import Species
 from ganabosques_orm.enums.typemovement import TypeMovement
+from mongoengine.queryset.visitor import Q
+import time
 from tools.pagination import build_paginated_response, PaginatedResponse
+from tools.logger import logger
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
-
-class SourceMovementSchema(BaseModel):
-    id: Optional[str] = Field(None, description="Source MongoDB ObjectId")
-    name: Optional[str] = Field(None, description="Name of the source")
-
 
 class ClassificationSchema(BaseModel):
     label: Optional[str] = Field(None, description="Label of classification")
@@ -26,7 +24,7 @@ class MovementSchema(BaseModel):
     date: Optional[str] = Field(None, description="Date of the movement (ISO format)")
     type_origin: Optional[TypeMovement] = Field(None, description="Origin type")
     type_destination: Optional[TypeMovement] = Field(None, description="Destination type")
-    source: Optional[SourceMovementSchema] = Field(None, description="Origin source")
+    source_movement: Optional[str] = Field(None, description="Origin source")
     ext_id: Optional[str] = Field(None, description="External ID")
     farm_id_origin: Optional[str] = Field(None, description="Origin farm ID")
     farm_id_destination: Optional[str] = Field(None, description="Destination farm ID")
@@ -43,10 +41,7 @@ class MovementSchema(BaseModel):
                 "date": "2024-06-01T00:00:00Z",
                 "type_origin": "FARM",
                 "type_destination": "ENTERPRISE",
-                "source": {
-                    "id": "665f9999b1ac3457e3a91000",
-                    "name": "Origen Ganadero"
-                },
+                "source_movement": "665f9999b1ac3457e3a91000",
                 "ext_id": "MV123456",
                 "farm_id_origin": "665f1726b1ac3457e3a91a05",
                 "farm_id_destination": "665f1726b1ac3457e3a91a07",
@@ -67,10 +62,7 @@ def serialize_movement(doc):
         "date": doc.date.isoformat() if doc.date else None,
         "type_origin": str(doc.type_origin.value) if doc.type_origin else None,
         "type_destination": str(doc.type_destination.value) if doc.type_destination else None,
-        "source": {
-            "id": str(doc.source.id) if doc.source and doc.source.id else None,
-            "name": doc.source.name if doc.source else None
-        } if doc.source else None,
+        "source_movement": str(doc.source_movement.id) if doc.source_movement else None,
         "ext_id": doc.ext_id,
         "farm_id_origin": str(doc.farm_id_origin.id) if doc.farm_id_origin else None,
         "farm_id_destination": str(doc.farm_id_destination.id) if doc.farm_id_destination else None,
@@ -91,6 +83,94 @@ router = generate_read_only_router(
     serialize_fn=serialize_movement,
     include_endpoints=["paged", "by-extid"]
 )
+
+@router.get("/by-farmid", response_model=List[MovementSchema])
+def get_movement_by_farmid(
+    ids: str = Query(..., description="One or more comma-separated farm_id to filter movements records"),
+    roles: Optional[str] = Query(
+        None, description="Which role(s) to filter by: 'origin', 'destination', or both (default: both)",
+    )
+):
+    """Search movement records by farm_id in origin, destination or both."""
+
+    t0 = time.perf_counter()
+
+    terms = parse_object_ids(ids)
+
+    roles = [r.lower().strip() for r in roles.split(",")] if roles else ["origin", "destination"]
+
+    t1 = time.perf_counter()
+    query = None
+    if "origin" in roles:
+        query = Q(farm_id_origin__in=terms)
+    if "destination" in roles:
+        q_dest = Q(farm_id_destination__in=terms)
+        query = q_dest if query is None else query | q_dest
+
+    if query is None:
+        raise HTTPException(status_code=400, detail="Invalid roles parameter: must include 'origin', 'destination', or both.")
+    t2 = time.perf_counter()
+    
+    matches = Movement.objects.filter(query).only(
+        "id", "date", "type_origin", "type_destination", "source_movement",
+        "ext_id", "farm_id_origin", "farm_id_destination",
+        "enterprise_id_origin", "enterprise_id_destination", "movement", "species"
+    ).select_related()
+    t3 = time.perf_counter()
+    serialized = [serialize_movement(movement) for movement in matches]
+    t4 = time.perf_counter()
+
+    logger.info(
+        f"/by-farmid timing (records={len(serialized)}): "
+        f"Parse={((t1 - t0) * 1000):.2f}ms | "
+        f"BuildQuery={((t2 - t1) * 1000):.2f}ms | "
+        f"QueryExec={((t3 - t2) * 1000):.2f}ms | "
+        f"Serialize={((t4 - t3) * 1000):.2f}ms | "
+        f"Total={((t4 - t0) * 1000):.2f}ms"
+    )
+    return serialized
+
+
+@router.get("/by-enterpriseid", response_model=List[MovementSchema])
+def get_movement_by_enterpriseid(
+    ids: str = Query(..., description="One or more comma-separated enterprise_id to filter movements records"),
+    roles: Optional[str] = Query(
+        None, description="Which role(s) to filter by: 'origin', 'destination', or both (default: both)",
+    )
+):
+    """Search movement records by enterprise_id in origin, destination or both."""
+    t0 = time.perf_counter()
+
+    terms = parse_object_ids(ids)
+
+    roles = [r.lower().strip() for r in roles.split(",")] if roles else ["origin", "destination"]
+
+    t1 = time.perf_counter()
+    query = None
+    if "origin" in roles:
+        query = Q(enterprise_id_origin__in=terms)
+    if "destination" in roles:
+        q_dest = Q(enterprise_id_destination__in=terms)
+        query = q_dest if query is None else query | q_dest
+
+    if query is None:
+        raise HTTPException(status_code=400, detail="Invalid roles parameter: must include 'origin', 'destination', or both.")
+    t2 = time.perf_counter()
+    matches = Movement.objects(query).select_related()
+    t3 = time.perf_counter()
+    serialized = [serialize_movement(movement) for movement in matches]
+    t4 = time.perf_counter()
+
+    logger.info(
+        f"/by-farmid timing (records={len(serialized)}): "
+        f"Parse={((t1 - t0) * 1000):.2f}ms | "
+        f"BuildQuery={((t2 - t1) * 1000):.2f}ms | "
+        f"QueryExec={((t3 - t2) * 1000):.2f}ms | "
+        f"Serialize={((t4 - t3) * 1000):.2f}ms | "
+        f"Total={((t4 - t0) * 1000):.2f}ms"
+    )
+    return serialized
+
 
 # @router.get("/by-extid", response_model=List[MovementSchema])
 # def get_movement_by_extid(
