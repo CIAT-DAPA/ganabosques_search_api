@@ -73,7 +73,7 @@ class MovementDestination(BaseModel):
     direction: Literal["in", "out"]
     destination_type: str
     movements: int
-    destination: Union[List[FarmSchema], List[EnterpriseSchema]]
+    destination: Union[FarmSchema, EnterpriseSchema]
 
 # Grupo de movimientos
 class MovementGroup(BaseModel):
@@ -202,7 +202,7 @@ def get_movement_by_enterpriseid(
     )
     return serialized
 
-@router.get("/statistics-by-farmid", response_model=MovementStatisticsResponse)
+@router.get("/statistics-by-farmid")
 def get_movement_by_farmidtest(
     ids: str = Query(..., description="One farm_id to filter movements records"),
 ):
@@ -230,14 +230,14 @@ def get_movement_by_farmidtest(
                 "farms_out": [
                     { "$match": { "farm_id_origin": farm_id, "type_destination": "FARM" } },
                     { "$group": { "_id": "$farm_id_destination", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_destination" } } },
-                    { "$lookup": { "from": "farm", "localField": "_id", "foreignField": "_id", "as": "destination_info" } },
+                    { "$lookup": { "from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info" } },
                     { "$unwind": "$destination_info" },
                     { "$project": { "_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
                 ],
                 "farms_in": [
                     { "$match": { "farm_id_destination": farm_id, "type_origin": "FARM" } },
                     { "$group": { "_id": "$farm_id_origin", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_origin" } } },
-                    { "$lookup": { "from": "farm", "localField": "_id", "foreignField": "_id", "as": "destination_info" } },
+                    { "$lookup": { "from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info" } },
                     { "$unwind": "$destination_info" },
                     { "$project": { "_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
                 ],
@@ -347,7 +347,7 @@ def get_movement_by_farmidtest(
     # Devolver la estructura deseada
     return result
 
-@router.get("/statistics-by-enterpriseid", response_model=MovementStatisticsResponse)
+@router.get("/statistics-by-enterpriseid")
 def get_movement_by_farmidtest(
     ids: str = Query(..., description="One enterprise_id to filter movements records"),
 ):
