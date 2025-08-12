@@ -203,149 +203,130 @@ def get_movement_by_enterpriseid(
     return serialized
 
 @router.get("/statistics-by-farmid")
-def get_movement_by_farmidtest(
-    ids: str = Query(..., description="One farm_id to filter movements records"),
+def get_movement_by_farmid_grouped(
+    ids: str = Query(..., description="One or more farm_ids separated by commas to filter movement records"),
 ):
-    """Search statistics of movements by farm_id i"""
+    """Search statistics of movements grouped per farm_id"""
+    import time
 
     t0 = time.perf_counter()
-
-    terms = parse_object_ids(ids)
-
+    farm_ids = [ObjectId(i) for i in parse_object_ids(ids)]
     t1 = time.perf_counter()
 
-    farm_id = ObjectId(terms[0])
+    results_by_farm = {}
 
-    pipeline = [
-        {
-            "$match": {
-                "$or": [
-                    { "farm_id_origin": farm_id },
-                    { "farm_id_destination": farm_id }
-                ]
-            }
-        },
-        {
-            "$facet": {
-                "farms_out": [
-                    { "$match": { "farm_id_origin": farm_id, "type_destination": "FARM" } },
-                    { "$group": { "_id": "$farm_id_destination", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_destination" } } },
-                    { "$lookup": { "from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info" } },
-                    { "$unwind": "$destination_info" },
-                    { "$project": { "_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
-                ],
-                "farms_in": [
-                    { "$match": { "farm_id_destination": farm_id, "type_origin": "FARM" } },
-                    { "$group": { "_id": "$farm_id_origin", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_origin" } } },
-                    { "$lookup": { "from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info" } },
-                    { "$unwind": "$destination_info" },
-                    { "$project": { "_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
-                ],
-                "enterprises_out": [
-                    { "$match": { "farm_id_origin": farm_id, "type_destination": { "$ne": "FARM" } } },
-                    { "$group": { "_id": "$enterprise_id_destination", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_destination" } } },
-                    { "$lookup": { "from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info" } },
-                    { "$unwind": "$destination_info" },
-                    { "$project": { "_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
-                ],
-                "enterprises_in": [
-                    { "$match": { "farm_id_destination": farm_id, "type_origin": { "$ne": "FARM" } } },
-                    { "$group": { "_id": "$enterprise_id_origin", "movements": { "$sum": 1 }, "type_destination": { "$first": "$type_origin" } } },
-                    { "$lookup": { "from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info" } },
-                    { "$unwind": "$destination_info" },
-                    { "$project": { "_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info" } }
-                ],
-                "statistic_out": [
-                    { "$match": { "farm_id_origin": farm_id } },
-                    { "$unwind": "$movement" },
-                    { "$group": {
-                        "_id": {
-                            "year": { "$year": "$date" },
-                            "species": "$species",
-                            "label": "$movement.label"
-                        },
-                        "headcount": { "$sum": "$movement.amount" },
-                        "movements": { "$sum": 1 }
-                    }},
-                    { "$group": {
-                        "_id": { "year": "$_id.year", "species": "$_id.species" },
-                        "labels": { "$push": { "k": "$_id.label", "v": { "headcount": "$headcount", "movements": "$movements" } } }
-                    }},
-                    { "$group": {
-                        "_id": "$_id.year",
-                        "species": { "$push": { "k": "$_id.species", "v": { "$arrayToObject": "$labels" } } }
-                    }},
-                    { "$project": { "k": { "$toString": "$_id" }, "v": { "$arrayToObject": "$species" } } },
-                    { "$replaceRoot": { "newRoot": { "k": "$k", "v": "$v" } } },
-                    { "$group": { "_id": None, "statistics": { "$push": { "k": "$k", "v": "$v" } } } },
-                    { "$project": { "_id": 0, "statistics": { "$arrayToObject": "$statistics" } } }
-                ],
-                "statistic_in": [
-                    { "$match": { "farm_id_destination": farm_id } },
-                    { "$unwind": "$movement" },
-                    { "$group": {
-                        "_id": {
-                            "year": { "$year": "$date" },
-                            "species": "$species",
-                            "label": "$movement.label"
-                        },
-                        "headcount": { "$sum": "$movement.amount" },
-                        "movements": { "$sum": 1 }
-                    }},
-                    { "$group": {
-                        "_id": { "year": "$_id.year", "species": "$_id.species" },
-                        "labels": { "$push": { "k": "$_id.label", "v": { "headcount": "$headcount", "movements": "$movements" } } }
-                    }},
-                    { "$group": {
-                        "_id": "$_id.year",
-                        "species": { "$push": { "k": "$_id.species", "v": { "$arrayToObject": "$labels" } } }
-                    }},
-                    { "$project": { "k": { "$toString": "$_id" }, "v": { "$arrayToObject": "$species" } } },
-                    { "$replaceRoot": { "newRoot": { "k": "$k", "v": "$v" } } },
-                    { "$group": { "_id": None, "statistics": { "$push": { "k": "$k", "v": "$v" } } } },
-                    { "$project": { "_id": 0, "statistics": { "$arrayToObject": "$statistics" } } }
-                ]
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "inputs": {
-                    "farms": "$farms_in",
-                    "enterprises": "$enterprises_in",
-                    "statistics": { "$arrayElemAt": ["$statistic_in.statistics", 0] }
-                },
-                "outputs": {
-                    "farms": "$farms_out",
-                    "enterprises": "$enterprises_out",
-                    "statistics": { "$arrayElemAt": ["$statistic_out.statistics", 0] }
+    for farm_id in farm_ids:
+        pipeline = [
+            {
+                "$match": {
+                    "$or": [
+                        {"farm_id_origin": farm_id},
+                        {"farm_id_destination": farm_id}
+                    ]
+                }
+            },
+            {
+                "$facet": {
+                    "farms_out": [
+                        {"$match": {"farm_id_origin": farm_id, "type_destination": "FARM"}},
+                        {"$group": {"_id": "$farm_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
+                        {"$lookup": {"from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info"}},
+                        {"$unwind": "$destination_info"},
+                        {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
+                    ],
+                    "farms_in": [
+                        {"$match": {"farm_id_destination": farm_id, "type_origin": "FARM"}},
+                        {"$group": {"_id": "$farm_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
+                        {"$lookup": {"from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info"}},
+                        {"$unwind": "$destination_info"},
+                        {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
+                    ],
+                    "enterprises_out": [
+                        {"$match": {"farm_id_origin": farm_id, "type_destination": {"$ne": "FARM"}}},
+                        {"$group": {"_id": "$enterprise_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
+                        {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
+                        {"$unwind": "$destination_info"},
+                        {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
+                    ],
+                    "enterprises_in": [
+                        {"$match": {"farm_id_destination": farm_id, "type_origin": {"$ne": "FARM"}}},
+                        {"$group": {"_id": "$enterprise_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
+                        {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
+                        {"$unwind": "$destination_info"},
+                        {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
+                    ],
+                    "statistic_out": [
+                        {"$match": {"farm_id_origin": farm_id}},
+                        {"$unwind": "$movement"},
+                        {"$group": {
+                            "_id": {"year": {"$year": "$date"}, "species": "$species", "label": "$movement.label"},
+                            "headcount": {"$sum": "$movement.amount"},
+                            "movements": {"$sum": 1}
+                        }},
+                        {"$group": {
+                            "_id": {"year": "$_id.year", "species": "$_id.species"},
+                            "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
+                        }},
+                        {"$group": {
+                            "_id": "$_id.year",
+                            "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
+                        }},
+                        {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
+                        {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
+                        {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
+                        {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
+                    ],
+                    "statistic_in": [
+                        {"$match": {"farm_id_destination": farm_id}},
+                        {"$unwind": "$movement"},
+                        {"$group": {
+                            "_id": {"year": {"$year": "$date"}, "species": "$species", "label": "$movement.label"},
+                            "headcount": {"$sum": "$movement.amount"},
+                            "movements": {"$sum": 1}
+                        }},
+                        {"$group": {
+                            "_id": {"year": "$_id.year", "species": "$_id.species"},
+                            "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
+                        }},
+                        {"$group": {
+                            "_id": "$_id.year",
+                            "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
+                        }},
+                        {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
+                        {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
+                        {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
+                        {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "inputs": {
+                        "farms": "$farms_in",
+                        "enterprises": "$enterprises_in",
+                        "statistics": {"$arrayElemAt": ["$statistic_in.statistics", 0]}
+                    },
+                    "outputs": {
+                        "farms": "$farms_out",
+                        "enterprises": "$enterprises_out",
+                        "statistics": {"$arrayElemAt": ["$statistic_out.statistics", 0]}
+                    }
                 }
             }
-        }
-    ]
+        ]
+
+        matches = list(Movement.objects.aggregate(pipeline))
+        result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
+        results_by_farm[str(farm_id)] = result
 
     t2 = time.perf_counter()
 
-    matches = list(Movement.objects.aggregate(pipeline))
+    logger.info(f"Grouped query for {len(farm_ids)} farm_ids executed in {(t2 - t1)*1000:.2f}ms")
 
-    t3 = time.perf_counter()
+    return results_by_farm
 
-    # Devolver la estructura deseada
-    result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
 
-    t4 = time.perf_counter()
-
-    logger.info(
-        #f"/by-farmid timing (records={len(result.farms) + len(result.enterprises)}): "
-        f"Parse={((t1 - t0) * 1000):.2f}ms | "
-        f"BuildQuery={((t2 - t1) * 1000):.2f}ms | "
-        f"QueryExec={((t3 - t2) * 1000):.2f}ms | "
-        f"Serialize={((t4 - t3) * 1000):.2f}ms | "
-        f"Total={((t4 - t0) * 1000):.2f}ms"
-    )
-
-    # Devolver la estructura deseada
-    return result
 
 @router.get("/statistics-by-enterpriseid")
 def get_movement_by_farmidtest(

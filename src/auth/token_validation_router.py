@@ -44,7 +44,7 @@ def validate_local_token(credentials: HTTPAuthorizationCredentials = Depends(sec
             if k not in ["realm_access", "allowed-origins", "resource_access"]
         }
 
-        client_roles = payload.get("resource_access", {}).get(CLIENT_ID, {}).get("roles", [])
+        client_roles = payload.get("resource_access", {}).get("GanabosquesWeb", {}).get("roles", [])
         filtered_payload["client_roles"] = client_roles
 
         return {"valid": True, "payload": filtered_payload}
