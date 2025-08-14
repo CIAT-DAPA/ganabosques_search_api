@@ -217,104 +217,365 @@ def get_movement_by_farmid_grouped(
 
     for farm_id in farm_ids:
         pipeline = [
-            {
-                "$match": {
-                    "$or": [
-                        {"farm_id_origin": farm_id},
-                        {"farm_id_destination": farm_id}
-                    ]
-                }
-            },
-            {
-                "$facet": {
-                    "farms_out": [
-                        {"$match": {"farm_id_origin": farm_id, "type_destination": "FARM"}},
-                        {"$group": {"_id": "$farm_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
-                        {"$lookup": {"from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info"}},
-                        {"$unwind": "$destination_info"},
-                        {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                    ],
-                    "farms_in": [
-                        {"$match": {"farm_id_destination": farm_id, "type_origin": "FARM"}},
-                        {"$group": {"_id": "$farm_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
-                        {"$lookup": {"from": "farmpolygons", "localField": "_id", "foreignField": "farm_id", "as": "destination_info"}},
-                        {"$unwind": "$destination_info"},
-                        {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                    ],
-                    "enterprises_out": [
-                        {"$match": {"farm_id_origin": farm_id, "type_destination": {"$ne": "FARM"}}},
-                        {"$group": {"_id": "$enterprise_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
-                        {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                        {"$unwind": "$destination_info"},
-                        {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                    ],
-                    "enterprises_in": [
-                        {"$match": {"farm_id_destination": farm_id, "type_origin": {"$ne": "FARM"}}},
-                        {"$group": {"_id": "$enterprise_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
-                        {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                        {"$unwind": "$destination_info"},
-                        {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                    ],
-                    "statistic_out": [
-                        {"$match": {"farm_id_origin": farm_id}},
-                        {"$unwind": "$movement"},
-                        {"$group": {
-                            "_id": {"year": {"$year": "$date"}, "species": "$species", "label": "$movement.label"},
-                            "headcount": {"$sum": "$movement.amount"},
-                            "movements": {"$sum": 1}
-                        }},
-                        {"$group": {
-                            "_id": {"year": "$_id.year", "species": "$_id.species"},
-                            "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
-                        }},
-                        {"$group": {
-                            "_id": "$_id.year",
-                            "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
-                        }},
-                        {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
-                        {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
-                        {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
-                        {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
-                    ],
-                    "statistic_in": [
-                        {"$match": {"farm_id_destination": farm_id}},
-                        {"$unwind": "$movement"},
-                        {"$group": {
-                            "_id": {"year": {"$year": "$date"}, "species": "$species", "label": "$movement.label"},
-                            "headcount": {"$sum": "$movement.amount"},
-                            "movements": {"$sum": 1}
-                        }},
-                        {"$group": {
-                            "_id": {"year": "$_id.year", "species": "$_id.species"},
-                            "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
-                        }},
-                        {"$group": {
-                            "_id": "$_id.year",
-                            "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
-                        }},
-                        {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
-                        {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
-                        {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
-                        {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
-                    ]
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "inputs": {
-                        "farms": "$farms_in",
-                        "enterprises": "$enterprises_in",
-                        "statistics": {"$arrayElemAt": ["$statistic_in.statistics", 0]}
-                    },
-                    "outputs": {
-                        "farms": "$farms_out",
-                        "enterprises": "$enterprises_out",
-                        "statistics": {"$arrayElemAt": ["$statistic_out.statistics", 0]}
+    {
+        "$match": {
+            "$or": [
+                {"farm_id_origin": farm_id},
+                {"farm_id_destination": farm_id}
+            ]
+        }
+    },
+    {
+        "$facet": {
+            "farms_out": [
+                {"$match": {"farm_id_origin": farm_id, "type_destination": "FARM"}},
+                {"$group": {
+                    "_id": "$farm_id_destination",
+                    "movements": {"$sum": 1},
+                    "type_destination": {"$first": "$type_destination"}
+                }},
+                {"$lookup": {
+                    "from": "farmpolygons",
+                    "localField": "_id",
+                    "foreignField": "farm_id",
+                    "as": "destination_info"
+                }},
+                {"$unwind": "$destination_info"},
+                {"$lookup": {
+                    "from": "farm",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "farm_info"
+                }},
+                {"$unwind": "$farm_info"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "direction": "out",
+                        "destination_type": "$type_destination",
+                        "movements": 1,
+                        "destination": "$destination_info",
+                        "sit_code": {
+                            "$arrayElemAt": [
+                                {
+                                    "$map": {
+                                        "input": {
+                                            "$filter": {
+                                                "input": "$farm_info.ext_id",
+                                                "as": "id",
+                                                "cond": { "$eq": ["$$id.source", "SIT_CODE"] }
+                                            }
+                                        },
+                                        "as": "sit",
+                                        "in": "$$sit.ext_code"
+                                    }
+                                },
+                                0
+                            ]
+                        }
                     }
                 }
+            ],
+            "farms_in": [
+                {"$match": {"farm_id_destination": farm_id, "type_origin": "FARM"}},
+                {"$group": {
+                    "_id": "$farm_id_origin",
+                    "movements": {"$sum": 1},
+                    "type_destination": {"$first": "$type_origin"}
+                }},
+                {"$lookup": {
+                    "from": "farmpolygons",
+                    "localField": "_id",
+                    "foreignField": "farm_id",
+                    "as": "destination_info"
+                }},
+                {"$unwind": "$destination_info"},
+                {"$lookup": {
+                    "from": "farm",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "farm_info"
+                }},
+                {"$unwind": "$farm_info"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "direction": "in",
+                        "destination_type": "$type_destination",
+                        "movements": 1,
+                        "destination": "$destination_info",
+                        "sit_code": {
+                            "$arrayElemAt": [
+                                {
+                                    "$map": {
+                                        "input": {
+                                            "$filter": {
+                                                "input": "$farm_info.ext_id",
+                                                "as": "id",
+                                                "cond": { "$eq": ["$$id.source", "SIT_CODE"] }
+                                            }
+                                        },
+                                        "as": "sit",
+                                        "in": "$$sit.ext_code"
+                                    }
+                                },
+                                0
+                            ]
+                        }
+                    }
+                }
+            ],
+            "enterprises_out": [
+                {"$match": {"farm_id_origin": farm_id, "type_destination": {"$ne": "FARM"}}},
+                {"$group": {
+                    "_id": "$enterprise_id_destination",
+                    "movements": {"$sum": 1},
+                    "type_destination": {"$first": "$type_destination"}
+                }},
+                {"$lookup": {
+                    "from": "enterprise",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "destination_info"
+                }},
+                {"$unwind": "$destination_info"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "direction": "out",
+                        "destination_type": "$type_destination",
+                        "movements": 1,
+                        "destination": "$destination_info"
+                    }
+                }
+            ],
+            "enterprises_in": [
+                {"$match": {"farm_id_destination": farm_id, "type_origin": {"$ne": "FARM"}}},
+                {"$group": {
+                    "_id": "$enterprise_id_origin",
+                    "movements": {"$sum": 1},
+                    "type_destination": {"$first": "$type_origin"}
+                }},
+                {"$lookup": {
+                    "from": "enterprise",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "destination_info"
+                }},
+                {"$unwind": "$destination_info"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "direction": "in",
+                        "destination_type": "$type_destination",
+                        "movements": 1,
+                        "destination": "$destination_info"
+                    }
+                }
+            ],
+            "statistic_out": [
+                {"$match": {"farm_id_origin": farm_id}},
+                {"$unwind": "$movement"},
+                {
+                    "$group": {
+                        "_id": {
+                            "year": {"$year": "$date"},
+                            "species": "$species",
+                            "label": "$movement.label"
+                        },
+                        "headcount": {"$sum": "$movement.amount"},
+                        "movements": {"$sum": 1},
+                        "farms": {
+                            "$addToSet": {
+                                "$cond": [
+                                    {"$eq": ["$type_destination", "FARM"]},
+                                    "$farm_id_destination",
+                                    "$$REMOVE"
+                                ]
+                            }
+                        },
+                        "enterprises": {
+                            "$addToSet": {
+                                "$cond": [
+                                    {"$ne": ["$type_destination", "FARM"]},
+                                    "$enterprise_id_destination",
+                                    "$$REMOVE"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {"year": "$_id.year", "species": "$_id.species"},
+                        "labels": {
+                            "$push": {
+                                "k": "$_id.label",
+                                "v": {"headcount": "$headcount", "movements": "$movements"}
+                            }
+                        },
+                        "farms": {"$addToSet": "$farms"},
+                        "enterprises": {"$addToSet": "$enterprises"}
+                    }
+                },
+                {
+                    "$project": {
+                        "farms": {
+                            "$reduce": {
+                                "input": "$farms",
+                                "initialValue": [],
+                                "in": {"$setUnion": ["$$value", "$$this"]}
+                            }
+                        },
+                        "enterprises": {
+                            "$reduce": {
+                                "input": "$enterprises",
+                                "initialValue": [],
+                                "in": {"$setUnion": ["$$value", "$$this"]}
+                            }
+                        },
+                        "labels": 1
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$_id.year",
+                        "species": {
+                            "$push": {
+                                "k": "$_id.species",
+                                "v": {"$arrayToObject": "$labels"}
+                            }
+                        },
+                        "farms": {"$first": "$farms"},
+                        "enterprises": {"$first": "$enterprises"}
+                    }
+                },
+                {
+                    "$project": {
+                        "k": {"$toString": "$_id"},
+                        "v": {
+                            "species": {"$arrayToObject": "$species"},
+                            "farms": "$farms",
+                            "enterprises": "$enterprises"
+                        }
+                    }
+                },
+                {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
+                {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
+                {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
+            ],
+            "statistic_in": [
+                {"$match": {"farm_id_destination": farm_id}},
+                {"$unwind": "$movement"},
+                {
+                    "$group": {
+                        "_id": {
+                            "year": {"$year": "$date"},
+                            "species": "$species",
+                            "label": "$movement.label"
+                        },
+                        "headcount": {"$sum": "$movement.amount"},
+                        "movements": {"$sum": 1},
+                        "farms": {
+                            "$addToSet": {
+                                "$cond": [
+                                    {"$eq": ["$type_origin", "FARM"]},
+                                    "$farm_id_origin",
+                                    "$$REMOVE"
+                                ]
+                            }
+                        },
+                        "enterprises": {
+                            "$addToSet": {
+                                "$cond": [
+                                    {"$ne": ["$type_origin", "FARM"]},
+                                    "$enterprise_id_origin",
+                                    "$$REMOVE"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {"year": "$_id.year", "species": "$_id.species"},
+                        "labels": {
+                            "$push": {
+                                "k": "$_id.label",
+                                "v": {"headcount": "$headcount", "movements": "$movements"}
+                            }
+                        },
+                        "farms": {"$addToSet": "$farms"},
+                        "enterprises": {"$addToSet": "$enterprises"}
+                    }
+                },
+                {
+                    "$project": {
+                        "farms": {
+                            "$reduce": {
+                                "input": "$farms",
+                                "initialValue": [],
+                                "in": {"$setUnion": ["$$value", "$$this"]}
+                            }
+                        },
+                        "enterprises": {
+                            "$reduce": {
+                                "input": "$enterprises",
+                                "initialValue": [],
+                                "in": {"$setUnion": ["$$value", "$$this"]}
+                            }
+                        },
+                        "labels": 1
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$_id.year",
+                        "species": {
+                            "$push": {
+                                "k": "$_id.species",
+                                "v": {"$arrayToObject": "$labels"}
+                            }
+                        },
+                        "farms": {"$first": "$farms"},
+                        "enterprises": {"$first": "$enterprises"}
+                    }
+                },
+                {
+                    "$project": {
+                        "k": {"$toString": "$_id"},
+                        "v": {
+                            "species": {"$arrayToObject": "$species"},
+                            "farms": "$farms",
+                            "enterprises": "$enterprises"
+                        }
+                    }
+                },
+                {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
+                {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
+                {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
+            ]
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "inputs": {
+                "farms": "$farms_in",
+                "enterprises": "$enterprises_in",
+                "statistics": {"$arrayElemAt": ["$statistic_in.statistics", 0]}
+            },
+            "outputs": {
+                "farms": "$farms_out",
+                "enterprises": "$enterprises_out",
+                "statistics": {"$arrayElemAt": ["$statistic_out.statistics", 0]}
             }
-        ]
+        }
+    }
+]
+
+
+
 
         matches = list(Movement.objects.aggregate(pipeline))
         result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
