@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from auth.auth import router as auth_router
 from auth.get_client_token import router as get_client_token_router
 from auth.token_validation_router import router as validate_token_router
+from routes.adm import router as adm
 from routes.adm1 import router as adm1
 from routes.adm2 import router as adm2
 from routes.adm3 import router as adm3
@@ -58,6 +59,7 @@ app.include_router(get_client_token_router)
 app.include_router(validate_token_router)
 
 # Administrative levels
+app.include_router(adm)
 app.include_router(adm1)
 app.include_router(adm2)
 app.include_router(adm3)
