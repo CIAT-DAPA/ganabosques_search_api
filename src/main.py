@@ -22,6 +22,9 @@ from routes.adm3risk import router as adm3risk
 from routes.farmrisk import router as farmrisk
 from routes.enterpriserisk import router as enterpriserisk
 from routes.movement import router as movement
+from routes.analisys_risk_router import router as get_farmrisk_by_analyses
+from routes.get_analysis import router as get_analysis_router
+from routes.adm3risk_by_analysis_and_adm3 import router as adm3risk_by_analysis_and_adm3
 from routes.enum import router as enum
 from tools.logger import logger
 
@@ -84,7 +87,9 @@ app.include_router(movement)
 
 # Enumns
 app.include_router(enum)
-
+app.include_router(get_farmrisk_by_analyses)
+app.include_router(get_analysis_router)
+app.include_router(adm3risk_by_analysis_and_adm3)
 
 
 # uvicorn main:app --reload
