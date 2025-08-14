@@ -31,7 +31,14 @@ pipeline {
                     
                     sshCommand remote: remote, command: '''
                         # Verify and create the wepapp_folder folder if it does not exist
-                        cd /opt
+                        fuser -k 5001/tcp || true
+                        cd /opt/ganabosques/api/ganabosques_search_api
+                        cd src
+                        git pull origin main
+                        export PATH="/home/ganabosques/.miniforge3/condabin/conda:$PATH"
+                        conda activate api
+                        pip install -r requirements.txt
+                        nohup uvicorn main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
                     '''
                     
                 }
@@ -39,28 +46,7 @@ pipeline {
         }
         
        
-        stage('Download latest release') {
-            steps {
-                script {
-                    sshCommand remote: remote, command: '''
-                        # Download the latest release f1081419031Nasa@rom GitHub
-                        ls
-                    '''
-                }
-            }
-        }
 
-
-        stage('Verify and control PM2 service') {
-            steps {
-                script {
-                    sshCommand remote: remote, command: '''
-                        # Verify and control PM2 service
-                        pwd
-                    '''
-                }
-            }
-        }
     }
 
     post {
