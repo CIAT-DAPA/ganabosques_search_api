@@ -62,5 +62,6 @@ router = generate_read_only_router(
     schema_model=DeforestationSchema,
     allowed_fields=["deforestation_source", "deforestation_type", "name"],
     serialize_fn=serialize_deforestation,
-    include_endpoints=["paged", "by-name"]
+    include_endpoints=["paged", "by-name"],
+    default_order_by=["-deforestation_source", "-deforestation_type", "-year_start"]
 )
