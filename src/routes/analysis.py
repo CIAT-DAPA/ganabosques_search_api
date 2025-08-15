@@ -16,6 +16,10 @@ class AnalysisSchema(BaseModel):
     protected_areas_id: Optional[str] = Field(None, description="ID of the referenced ProtectedArea document")
     farming_areas_id: Optional[str] = Field(None, description="ID of the referenced FarmingArea document")
     deforestation_id: Optional[str] = Field(None, description="ID of the referenced Deforestation document")
+    deforestation_name: Optional[str] = Field(None, description="Name or label for the deforestation data")
+    deforestation_year_start: Optional[int] = Field(None, description="Start year of the deforestation period")
+    deforestation_year_end: Optional[int] = Field(None, description="End year of the deforestation period")
+    deforestation_path: Optional[str] = Field(None, description="Path or reference to the deforestation file in Geoserver")
     user_id: Optional[str] = Field(None, description="ID of the user who created the analysis")
     date: Optional[datetime] = Field(None, description="Datetime when the analysis was created")
 
@@ -27,6 +31,10 @@ class AnalysisSchema(BaseModel):
                 "protected_areas_id": "665faaaab1ac3457e3a91f01",
                 "farming_areas_id": "665fbbbcb1ac3457e3a91f11",
                 "deforestation_id": "665fcccdb1ac3457e3a91f22",
+                "deforestation_name": "smbyc_deforestation_annual_2020_2023",
+                "deforestation_year_start": 2020,
+                "deforestation_year_end": 2023,
+                "deforestation_path": "deforestation/smbyc_deforestation_annual/",
                 "user_id": "664f1234b1ac3457e3a90009",
                 "date": "2025-06-11T14:30:00Z"
             }
@@ -39,6 +47,10 @@ def serialize_analysis(doc):
         "protected_areas_id": str(doc.protected_areas_id.id) if doc.protected_areas_id else None,
         "farming_areas_id": str(doc.farming_areas_id.id) if doc.farming_areas_id else None,
         "deforestation_id": str(doc.deforestation_id.id) if doc.deforestation_id else None,
+        "deforestation_name": str(doc.deforestation_id.name) if doc.deforestation_id else None,
+        "deforestation_year_start": str(doc.deforestation_id.year_start) if doc.deforestation_id else None,
+        "deforestation_year_end": str(doc.deforestation_id.year_end) if doc.deforestation_id else None,
+        "deforestation_path": str(doc.deforestation_id.path) if doc.deforestation_id else None,
         "user_id": str(doc.user_id.id) if doc.user_id else None,
         "date": doc.date.isoformat() if doc.date else None
     }
