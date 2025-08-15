@@ -20,8 +20,7 @@ class Adm3Schema(BaseModel):
     name: Optional[str] = Field(None, description="Name of the administrative region")
     adm2_id: Optional[str] = Field(None, description="ID of the adm2 level to which it belongs")
     adm2_name: Optional[str] = Field(None, description="Name of the level adm2 to which it belongs")
-    adm1_id: Optional[str] = Field(None, description="ID of the adm1 level to which it belongs")
-    adm1_name: Optional[str] = Field(None, description="Name of the level adm1 to which it belongs")
+    label: Optional[str] = Field(None, description="Combined name with ADM1, ADM2, ADM3")
 
     class Config:
         from_attributes = True
@@ -29,9 +28,10 @@ class Adm3Schema(BaseModel):
             "example": {
                 "id": "66602cd389f18226a0d9a2aa",
                 "ext_id": "5001",
-                "name": "MEDELLÍN",
+                "name": "LA ZONA",
                 "adm2_id": "665f1726b1ac3457e3a91a05",
-                "adm2_name": "ANTIOQUIA",
+                "adm2_name": "MEDELLIN",
+                "label": "ANTIOQUIA, MEDELLIN, LA ZONA",
             }
         }
 
@@ -41,7 +41,8 @@ def serialize_adm3(doc):
         "ext_id": doc.ext_id,
         "name": doc.name,
         "adm2_id": str(doc.adm2_id.id) if doc.adm2_id else None,
-        "adm2_name": str(doc.adm2_id.name) if doc.adm2_id else None
+        "adm2_name": str(doc.adm2_id.name) if doc.adm2_id else None,
+        "label": doc.label
     }
 
 @router.get("/", response_model=List[Adm3Schema])
@@ -104,41 +105,18 @@ def get_adm3_by_adm2_ids(
     matches = Adm3.objects(adm2_id__in=id_list)
     return [serialize_adm3(adm) for adm in matches]
 
-@router.get("/by-label", response_model=List[dict])
+@router.get("/by-label", response_model=List[Adm3Schema])
 def get_adm3_by_label(
     label: str = Query(..., description="Text to search in combined label: adm1_name, adm2_name, adm3_name")
 ):
     """
-    Retrieve Adm3 records that match a partial label made of adm1, adm2, and adm3 names.
-    Example: /adm3/by-label?label=antioquia, medellin
+    Get Adm3 records that partially match one or more names.
+    Example: /adm3/by-label?name=charco azul,las palmas
     """
-    # Preload Adm1 and Adm2 for lookup
-    adm1_lookup = {str(adm.id): adm.name for adm in Adm1.objects()}
-    adm2_lookup = {
-        str(adm.id): {
-            "name": adm.name,
-            "adm1_id": str(adm.adm1_id.id) if adm.adm1_id else None
-        }
-        for adm in Adm2.objects()
-    }
-
-    results = []
-    search_text = label.lower()
-
-    for adm3 in Adm3.objects():
-        adm2_id = str(adm3.adm2_id.id) if adm3.adm2_id else None
-        adm2_info = adm2_lookup.get(adm2_id, {})
-        adm2_name = adm2_info.get("name", "UNKNOWN")
-        adm1_id = adm2_info.get("adm1_id")
-        adm1_name = adm1_lookup.get(adm1_id, "UNKNOWN")
-
-        label_text = f"{adm1_name}, {adm2_name}, {adm3.name}"
-        if search_text in label_text.lower():
-            result = serialize_adm3(adm3)
-            result["label"] = label_text
-            results.append(result)
-
-    return results
+    search_terms = [term.strip() for term in label.split(",") if term.strip()]
+    query = {"$or": [{"label": {"$regex": term, "$options": "i"}} for term in search_terms]}
+    matches = Adm3.objects(__raw__=query)
+    return [serialize_adm3(adm) for adm in matches]
 
 @router.get("/paged/", response_model=PaginatedResponse[Adm3Schema])
 def get_adm3_paginated(
