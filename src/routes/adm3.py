@@ -113,9 +113,10 @@ def get_adm3_by_label(
     Get Adm3 records that partially match one or more names.
     Example: /adm3/by-label?name=charco azul,las palmas
     """
-    search_terms = [term.strip() for term in label.split(",") if term.strip()]
-    query = {"$or": [{"label": {"$regex": term, "$options": "i"}} for term in search_terms]}
-    matches = Adm3.objects(__raw__=query)
+    #search_terms = [term.strip() for term in label.split(",") if term.strip()]
+    #query = {"$or": [{"label": {"$regex": term, "$options": "i"}} for term in search_terms]}
+    #matches = Adm3.objects(__raw__=query)
+    matches = Adm3.objects(label__icontains=label)
     return [serialize_adm3(adm) for adm in matches]
 
 @router.get("/paged/", response_model=PaginatedResponse[Adm3Schema])
