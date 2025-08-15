@@ -16,6 +16,8 @@ class AnalysisSchema(BaseModel):
     protected_areas_id: Optional[str] = Field(None, description="ID of the referenced ProtectedArea document")
     farming_areas_id: Optional[str] = Field(None, description="ID of the referenced FarmingArea document")
     deforestation_id: Optional[str] = Field(None, description="ID of the referenced Deforestation document")
+    deforestation_source: str = Field(None, description="Source of the deforestation data (e.g., SMBYC)")
+    deforestation_type: str = Field(None, description="Type of deforestation data: annual or cumulative")
     deforestation_name: Optional[str] = Field(None, description="Name or label for the deforestation data")
     deforestation_year_start: Optional[int] = Field(None, description="Start year of the deforestation period")
     deforestation_year_end: Optional[int] = Field(None, description="End year of the deforestation period")
@@ -31,6 +33,8 @@ class AnalysisSchema(BaseModel):
                 "protected_areas_id": "665faaaab1ac3457e3a91f01",
                 "farming_areas_id": "665fbbbcb1ac3457e3a91f11",
                 "deforestation_id": "665fcccdb1ac3457e3a91f22",
+                "deforestation_source": "SMBYC",
+                "deforestation_type": "annual",
                 "deforestation_name": "smbyc_deforestation_annual_2020_2023",
                 "deforestation_year_start": 2020,
                 "deforestation_year_end": 2023,
@@ -47,6 +51,8 @@ def serialize_analysis(doc):
         "protected_areas_id": str(doc.protected_areas_id.id) if doc.protected_areas_id else None,
         "farming_areas_id": str(doc.farming_areas_id.id) if doc.farming_areas_id else None,
         "deforestation_id": str(doc.deforestation_id.id) if doc.deforestation_id else None,
+        "deforestation_source": str(doc.deforestation_id.deforestation_source.value) if doc.deforestation_id else None,
+        "deforestation_type": str(doc.deforestation_id.deforestation_type.value) if doc.deforestation_id else None,
         "deforestation_name": str(doc.deforestation_id.name) if doc.deforestation_id else None,
         "deforestation_year_start": str(doc.deforestation_id.year_start) if doc.deforestation_id else None,
         "deforestation_year_end": str(doc.deforestation_id.year_end) if doc.deforestation_id else None,
