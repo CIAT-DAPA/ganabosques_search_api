@@ -64,7 +64,7 @@ def serialize_analysis(doc):
 router = generate_read_only_router(
     prefix="/analysis",
     tags=["Analysis risk"],
-    collection=Analysis,
+    collection=Analysis.objects.select_related(),
     schema_model=AnalysisSchema,
     allowed_fields=[],
     serialize_fn=serialize_analysis,
