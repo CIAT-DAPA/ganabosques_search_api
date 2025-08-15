@@ -18,7 +18,8 @@ def generate_read_only_router(
     schema_model: Type[BaseModel],
     allowed_fields: List[str],
     serialize_fn: Optional[Callable[[Any], Dict]] = None,
-    include_endpoints: Optional[List[str]] = None 
+    include_endpoints: Optional[List[str]] = None,
+    include_get_all: bool = True
 ) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=tags)
     include_endpoints = set(include_endpoints or ["all"])
@@ -29,11 +30,12 @@ def generate_read_only_router(
     
     pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', collection.__name__).title()
 
-    @router.get("/", response_model=List[schema_model])
-    def get_all(): 
-        items = collection.objects()
-        return [serialize(i) for i in items]
-    get_all.__doc__ = f"Retrieve all {pretty_name} records."
+    if include_get_all:
+        @router.get("/", response_model=List[schema_model])
+        def get_all(): 
+            items = collection.objects()
+            return [serialize(i) for i in items]
+        get_all.__doc__ = f"Retrieve all {pretty_name} records."
 
     @router.get("/by-ids", response_model=List[schema_model])
     def get_by_ids(

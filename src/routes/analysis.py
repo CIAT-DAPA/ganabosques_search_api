@@ -68,5 +68,18 @@ router = generate_read_only_router(
     schema_model=AnalysisSchema,
     allowed_fields=[],
     serialize_fn=serialize_analysis,
-    include_endpoints=["paged"]
+    include_endpoints=["paged"],
+    include_get_all=False
 )
+
+@router.get("/", response_model=List[AnalysisSchema])
+def get_all(): 
+    """Retrieve all Analysis records."""
+    items = Analysis.objects.select_related()
+
+    items_sorted = sorted(
+        items,
+        key=lambda x: x.deforestation_id.year_end,
+        reverse=True
+    )
+    return [serialize_analysis(i) for i in items_sorted]
