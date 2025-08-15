@@ -57,7 +57,7 @@ def serialize_analysis(doc):
         "deforestation_year_start": str(doc.deforestation_id.year_start) if doc.deforestation_id.year_start else None,
         "deforestation_year_end": str(doc.deforestation_id.year_end) if doc.deforestation_id.year_end else None,
         "deforestation_path": str(doc.deforestation_id.path) if doc.deforestation_id else None,
-        "user_id": str(doc.user_id.id) if doc.user_id else None,
+        "user_id": str(doc.user_id) if doc.user_id else None,
         "date": doc.date.isoformat() if doc.date else None
     }
 
