@@ -242,10 +242,12 @@ def get_movement_by_farmid_grouped(
                     "as": "destination_info"
                 }},
                 {"$unwind": "$destination_info"},
+                # ⬇️ quitar geojson (y geometry, por si tu colección usa ese nombre)
+                {"$unset": ["destination_info.geojson", "destination_info.geometry"]},
                 {"$project": {
                     "_id": 0,
                     "direction": "out",
-                    "destination_type": "$type_destination",
+                    "destination_type": "$type_destination",  # 'FARM'
                     "movements": 1,
                     "destination": "$destination_info"
                 }}
@@ -256,7 +258,7 @@ def get_movement_by_farmid_grouped(
                 {"$group": {
                     "_id": "$farm_id_origin",
                     "movements": {"$sum": 1},
-                    "type_destination": {"$first": "$type_origin"}
+                    "type_destination": {"$first": "$type_origin"}  # origen es FARM
                 }},
                 {"$lookup": {
                     "from": "farmpolygons",
@@ -265,15 +267,18 @@ def get_movement_by_farmid_grouped(
                     "as": "destination_info"
                 }},
                 {"$unwind": "$destination_info"},
+                # ⬇️ quitar geojson (y geometry, por si acaso)
+                {"$unset": ["destination_info.geojson", "destination_info.geometry"]},
                 {"$project": {
                     "_id": 0,
                     "direction": "in",
-                    "destination_type": "$type_destination",
+                    "destination_type": "$type_destination",  # 'FARM'
                     "movements": 1,
                     "destination": "$destination_info"
                 }}
             ],
-            # === Salidas hacia empresas ===
+
+            # === Salidas hacia empresas === (SIN cambios)
             "enterprises_out": [
                 {"$match": {"farm_id_origin": farm_id, "type_destination": {"$ne": "FARM"}}},
                 {"$group": {
@@ -296,7 +301,8 @@ def get_movement_by_farmid_grouped(
                     "destination": "$destination_info"
                 }}
             ],
-            # === Entradas desde empresas ===
+
+            # === Entradas desde empresas === (SIN cambios)
             "enterprises_in": [
                 {"$match": {"farm_id_destination": farm_id, "type_origin": {"$ne": "FARM"}}},
                 {"$group": {
@@ -319,7 +325,8 @@ def get_movement_by_farmid_grouped(
                     "destination": "$destination_info"
                 }}
             ],
-            # === Estadísticas salidas ===
+
+            # === Estadísticas (SIN cambios) ===
             "statistic_out": [
                 {"$match": {"farm_id_origin": farm_id}},
                 {"$unwind": "$movement"},
@@ -361,7 +368,6 @@ def get_movement_by_farmid_grouped(
                 {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
                 {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
             ],
-            # === Estadísticas entradas ===
             "statistic_in": [
                 {"$match": {"farm_id_destination": farm_id}},
                 {"$unwind": "$movement"},
