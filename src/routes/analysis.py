@@ -1,26 +1,25 @@
 import re
 from fastapi import Query, HTTPException
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, Field
-from bson import ObjectId
-from ganabosques_orm.collections.analysis import Analysis
-from tools.pagination import build_paginated_response, PaginatedResponse
 from datetime import datetime
 
+from ganabosques_orm.collections.analysis import Analysis
 from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
 
-
+# -----------------------------------------------------------------------------
+# Pydantic schema: devolvemos datetimes completos
+# -----------------------------------------------------------------------------
 class AnalysisSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the analysis")
     protected_areas_id: Optional[str] = Field(None, description="ID of the referenced ProtectedArea document")
     farming_areas_id: Optional[str] = Field(None, description="ID of the referenced FarmingArea document")
     deforestation_id: Optional[str] = Field(None, description="ID of the referenced Deforestation document")
-    deforestation_source: str = Field(None, description="Source of the deforestation data (e.g., SMBYC)")
-    deforestation_type: str = Field(None, description="Type of deforestation data: annual or cumulative")
+    deforestation_source: Optional[str] = Field(None, description="Source of the deforestation data (e.g., SMBYC)")
+    deforestation_type: Optional[str] = Field(None, description="Type of deforestation data: annual or cumulative")
     deforestation_name: Optional[str] = Field(None, description="Name or label for the deforestation data")
-    deforestation_year_start: Optional[int] = Field(None, description="Start year of the deforestation period")
-    deforestation_year_end: Optional[int] = Field(None, description="End year of the deforestation period")
+    deforestation_period_start: Optional[datetime] = Field(None, description="Start datetime of the deforestation window")
+    deforestation_period_end: Optional[datetime] = Field(None, description="End datetime of the deforestation window")
     deforestation_path: Optional[str] = Field(None, description="Path or reference to the deforestation file in Geoserver")
     user_id: Optional[str] = Field(None, description="ID of the user who created the analysis")
     date: Optional[datetime] = Field(None, description="Datetime when the analysis was created")
@@ -33,34 +32,111 @@ class AnalysisSchema(BaseModel):
                 "protected_areas_id": "665faaaab1ac3457e3a91f01",
                 "farming_areas_id": "665fbbbcb1ac3457e3a91f11",
                 "deforestation_id": "665fcccdb1ac3457e3a91f22",
-                "deforestation_source": "SMBYC",
+                "deforestation_source": "smbyc",
                 "deforestation_type": "annual",
-                "deforestation_name": "smbyc_deforestation_annual_2020_2023",
-                "deforestation_year_start": 2020,
-                "deforestation_year_end": 2023,
+                "deforestation_name": "smbyc_deforestation_annual_2010_2012",
+                "deforestation_period_start": "2010-01-01T00:00:00+00:00",
+                "deforestation_period_end": "2012-12-31T23:59:59+00:00",
                 "deforestation_path": "deforestation/smbyc_deforestation_annual/",
                 "user_id": "664f1234b1ac3457e3a90009",
                 "date": "2025-06-11T14:30:00Z"
             }
         }
 
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def _enum_or_str(val):
+    """Devuelve val.value si es Enum; str(val) si no; None si None."""
+    if val is None:
+        return None
+    return str(getattr(val, "value", val))
+
+def _to_dt_or_none(val: Union[datetime, str, int, None]) -> Optional[datetime]:
+    """
+    Normaliza un valor a datetime si es posible:
+    - datetime -> tal cual
+    - str ISO -> datetime.fromisoformat (si aplica)
+    - int/float (epoch seconds) -> conviértelo si lo usas así (comentado)
+    - otro -> None
+    """
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        try:
+            # soporta 'YYYY-MM-DDTHH:MM:SS[.mmm][+offset]'
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    # Si en tu modelo guardas epoch segs, puedes habilitar esto:
+    # if isinstance(val, (int, float)):
+    #     try:
+    #         return datetime.fromtimestamp(val, tz=timezone.utc)
+    #     except Exception:
+    #         return None
+    return None
+
+def _safe_period_end(a) -> datetime:
+    """
+    Devuelve un datetime para ordenar por period_end desc.
+    Prioriza:
+      1) Campo denormalizado en Analysis: deforestation_period_end
+      2) Deforestation.period_end
+      3) datetime.min como centinela
+    """
+    denorm = _to_dt_or_none(getattr(a, "deforestation_period_end", None))
+    if denorm is not None:
+        return denorm
+
+    d = getattr(a, "deforestation_id", None)
+    if d is not None:
+        pend = _to_dt_or_none(getattr(d, "period_end", None))
+        if pend is not None:
+            return pend
+
+    return datetime.min  # para que queden al final en sort desc
+
+# -----------------------------------------------------------------------------
+# Serializador robusto: devuelve datetimes completos
+# -----------------------------------------------------------------------------
 def serialize_analysis(doc):
-    """Serialize an Analysis document into a JSON-compatible dictionary."""
+    d = getattr(doc, "deforestation_id", None)
+
+    def_source = None
+    def_type = None
+    def_name = None
+    def_period_start = None
+    def_period_end = None
+    def_path = None
+
+    if d:
+        def_source = _enum_or_str(getattr(d, "deforestation_source", None))
+        def_type = _enum_or_str(getattr(d, "deforestation_type", None))
+        def_name = getattr(d, "name", None)
+        def_period_start = _to_dt_or_none(getattr(d, "period_start", None))
+        def_period_end = _to_dt_or_none(getattr(d, "period_end", None))
+        def_path = getattr(d, "path", None)
+
     return {
         "id": str(doc.id),
-        "protected_areas_id": str(doc.protected_areas_id.id) if doc.protected_areas_id else None,
-        "farming_areas_id": str(doc.farming_areas_id.id) if doc.farming_areas_id else None,
-        "deforestation_id": str(doc.deforestation_id.id) if doc.deforestation_id else None,
-        "deforestation_source": str(doc.deforestation_id.deforestation_source.value) if doc.deforestation_id.deforestation_source else None,
-        "deforestation_type": str(doc.deforestation_id.deforestation_type.value) if doc.deforestation_id.deforestation_type else None,
-        "deforestation_name": str(doc.deforestation_id.name) if doc.deforestation_id.name else None,
-        "deforestation_year_start": str(doc.deforestation_id.year_start) if doc.deforestation_id.year_start else None,
-        "deforestation_year_end": str(doc.deforestation_id.year_end) if doc.deforestation_id.year_end else None,
-        "deforestation_path": str(doc.deforestation_id.path) if doc.deforestation_id else None,
-        "user_id": str(doc.user_id) if doc.user_id else None,
-        "date": doc.date.isoformat() if doc.date else None
+        "protected_areas_id": str(doc.protected_areas_id.id) if getattr(doc, "protected_areas_id", None) else None,
+        "farming_areas_id": str(doc.farming_areas_id.id) if getattr(doc, "farming_areas_id", None) else None,
+        "deforestation_id": str(d.id) if d else None,
+        "deforestation_source": def_source,
+        "deforestation_type": def_type,
+        "deforestation_name": str(def_name) if def_name is not None else None,
+        "deforestation_period_start": def_period_start,
+        "deforestation_period_end": def_period_end,
+        "deforestation_path": str(def_path) if def_path is not None else None,
+        "user_id": str(doc.user_id) if getattr(doc, "user_id", None) else None,
+        "date": doc.date.isoformat() if getattr(doc, "date", None) else None,
     }
 
+# -----------------------------------------------------------------------------
+# Router
+# -----------------------------------------------------------------------------
 router = generate_read_only_router(
     prefix="/analysis",
     tags=["Analysis risk"],
@@ -73,13 +149,8 @@ router = generate_read_only_router(
 )
 
 @router.get("/", response_model=List[AnalysisSchema])
-def get_all(): 
-    """Retrieve all Analysis records."""
+def get_all():
+    """Retrieve all Analysis records sorted by period_end descending."""
     items = Analysis.objects.select_related()
-
-    items_sorted = sorted(
-        items,
-        key=lambda x: x.deforestation_id.year_end,
-        reverse=True
-    )
+    items_sorted = sorted(items, key=_safe_period_end, reverse=True)
     return [serialize_analysis(i) for i in items_sorted]

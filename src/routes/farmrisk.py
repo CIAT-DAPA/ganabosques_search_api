@@ -1,13 +1,7 @@
-import re
-from fastapi import Query, HTTPException
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel, Field
-from bson import ObjectId
 from ganabosques_orm.collections.farmrisk import FarmRisk
-from tools.pagination import build_paginated_response, PaginatedResponse
-
 from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
 
 class AttributeSchema(BaseModel):
     prop: Optional[float] = Field(None, description="Proportion")
@@ -17,58 +11,67 @@ class AttributeSchema(BaseModel):
 class FarmRiskSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the farm risk")
     farm_id: Optional[str] = Field(None, description="ID of the associated farm")
+    analysis_id: Optional[str] = Field(None, description="ID of the associated analysis")
     farm_polygons_id: Optional[str] = Field(None, description="ID of the associated farm polygon")
+
+    # Subdocumentos
     deforestation: Optional[AttributeSchema] = Field(None, description="Deforestation attributes")
     protected: Optional[AttributeSchema] = Field(None, description="Protected area attributes")
-    risk_direct: Optional[float] = Field(None, description="Direct risk value")
-    risk_input: Optional[float] = Field(None, description="Input-based risk value")
-    risk_output: Optional[float] = Field(None, description="Output-based risk value")
-    risk_total: Optional[float] = Field(None, description="Total risk value")
+    farming_in: Optional[AttributeSchema] = Field(None, description="Attributes for farming_in")
+    farming_out: Optional[AttributeSchema] = Field(None, description="Attributes for farming_out")
+
+    # Riesgos booleanos
+    risk_direct: Optional[bool] = Field(None, description="Direct risk (>0 -> true, else false)")
+    risk_input: Optional[bool] = Field(None, description="Input-based risk (>0 -> true, else false)")
+    risk_output: Optional[bool] = Field(None, description="Output-based risk (>0 -> true, else false)")
 
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
-                "id": "6661bbbce2ac3457e3a92bbb",
-                "farm_id": "665f1234b1ac3457e3a91aaa",
-                "farm_polygons_id": "665f5678b1ac3457e3a91bbb",
-                "deforestation": {
-                    "prop": 0.25,
-                    "ha": 12.5,
-                    "distance": 1.3
-                },
-                "protected": {
-                    "prop": 0.1,
-                    "ha": 3.2,
-                    "distance": 2.8
-                },
-                "risk_direct": 0.7,
-                "risk_input": 0.6,
-                "risk_output": 0.8,
-                "risk_total": 2.1
+                "id": "68a36b0c12967887c405a8dc",
+                "farm_id": "689a803713d2089e5c8b1e2e",
+                "analysis_id": "689d1149a6ef4a011d5c394e",
+                "farm_polygons_id": "689a803713d2089e5c8b1e2f",
+                "deforestation": { "prop": 0, "ha": 0, "distance": 0 },
+                "protected": { "prop": 1, "ha": 4.675431693, "distance": 0 },
+                "farming_in": { "prop": 0.32, "ha": 1.234, "distance": 12 },
+                "farming_out": { "prop": 0.05, "ha": 0.421, "distance": 3 },
+                "risk_direct": True,
+                "risk_input": False,
+                "risk_output": False
             }
         }
 
+def _as_str_oid(value) -> Optional[str]:
+    if not value:
+        return None
+    return str(getattr(value, "id", value))
+
+def _serialize_attr(attr) -> Optional[dict]:
+    if not attr:
+        return None
+    return {
+        "prop": getattr(attr, "prop", None),
+        "ha": getattr(attr, "ha", None),
+        "distance": getattr(attr, "distance", None),
+    }
+
 def serialize_farmrisk(doc):
-    """Serialize a FarmRisk document into a JSON-compatible dictionary."""
     return {
         "id": str(doc.id),
-        "farm_id": str(doc.farm_id.id) if doc.farm_id else None,
-        "farm_polygons_id": str(doc.farm_polygons_id.id) if doc.farm_polygons_id else None,
-        "deforestation": {
-            "prop": doc.deforestation.prop if doc.deforestation else None,
-            "ha": doc.deforestation.ha if doc.deforestation else None,
-            "distance": doc.deforestation.distance if doc.deforestation else None
-        } if doc.deforestation else None,
-        "protected": {
-            "prop": doc.protected.prop if doc.protected else None,
-            "ha": doc.protected.ha if doc.protected else None,
-            "distance": doc.protected.distance if doc.protected else None
-        } if doc.protected else None,
-        "risk_direct": doc.risk_direct,
-        "risk_input": doc.risk_input,
-        "risk_output": doc.risk_output,
-        "risk_total": doc.risk_total
+        "farm_id": _as_str_oid(getattr(doc, "farm_id", None)),
+        "analysis_id": _as_str_oid(getattr(doc, "analysis_id", None)),
+        "farm_polygons_id": _as_str_oid(getattr(doc, "farm_polygons_id", None)),
+
+        "deforestation": _serialize_attr(getattr(doc, "deforestation", None)),
+        "protected": _serialize_attr(getattr(doc, "protected", None)),
+        "farming_in": _serialize_attr(getattr(doc, "farming_in", None)),
+        "farming_out": _serialize_attr(getattr(doc, "farming_out", None)),
+
+        "risk_direct": getattr(doc, "risk_direct", None),
+        "risk_input": getattr(doc, "risk_input", None),
+        "risk_output": getattr(doc, "risk_output", None),
     }
 
 router = generate_read_only_router(
@@ -76,7 +79,10 @@ router = generate_read_only_router(
     tags=["Analysis risk"],
     collection=FarmRisk,
     schema_model=FarmRiskSchema,
-    allowed_fields=[],
+    allowed_fields=[
+        "farm_id", "analysis_id",
+        "risk_direct", "risk_input", "risk_output",
+    ],
     serialize_fn=serialize_farmrisk,
     include_endpoints=["paged"]
 )

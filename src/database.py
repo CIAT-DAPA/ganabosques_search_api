@@ -7,7 +7,8 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("MONGO_DB_NAME")
-
+print(DATABASE_URL)
+print(DATABASE_NAME)
 def init_db():
     conn = connect(
         db=DATABASE_NAME,

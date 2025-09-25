@@ -456,6 +456,7 @@ def get_movement_by_farmid_grouped(
 
 
 
+
         matches = list(Movement.objects.aggregate(pipeline))
         result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
         results_by_farm[str(farm_id)] = result
