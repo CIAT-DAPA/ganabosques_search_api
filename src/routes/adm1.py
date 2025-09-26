@@ -98,7 +98,7 @@ def get_adm1_paginated(
     else:
         fields = list(allowed_fields)
 
-    # Validate and parse sort fields
+    # Validate and parse sort field
     sort_fields = []
     invalid_fields = []
 
