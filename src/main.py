@@ -92,5 +92,4 @@ app.include_router(get_farmrisk_by_analyses)
 app.include_router(get_analysis_router)
 app.include_router(adm3risk_by_analysis_and_adm3)
 app.include_router(adm3risk_get_all)
-
 # uvicorn main:app --reload

@@ -160,3 +160,23 @@ def get_enterprise_by_adm2_ids(
 
 #     enterprises = Enterprise.objects(__raw__=query)
 #     return [serialize_enterprise(e) for e in enterprises]
+@router.get("/by-name", response_model=List[EnterpriseSchema])
+def get_enterprise_by_name(
+    name: str = Query(..., description="Uno o más nombres de empresa (comma-separated) para búsqueda parcial case-insensitive")
+):
+    """
+    Busca enterprises por su nombre (partial, case-insensitive).
+    Ejemplo: /enterprise/by-name?name=frigorifico,ganaderia
+    """
+    # 1) Parsear términos
+    terms = [t.strip() for t in name.split(",") if t.strip()]
+    if not terms:
+        raise HTTPException(status_code=400, detail="Debes proporcionar al menos un término en 'name'.")
+
+    # 2) Construir query de regex con OR
+    ors = [{"name": {"$regex": re.escape(t), "$options": "i"}} for t in terms]
+    query = {"$or": ors}
+
+    # 3) Buscar y devolver
+    matches = Enterprise.objects(__raw__=query)
+    return [serialize_enterprise(e) for e in matches]
