@@ -6,7 +6,6 @@ from bson import ObjectId
 from bson.dbref import DBRef
 import logging
 
-from ganabosques_orm.collections.adm3risk import Adm3Risk
 from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.farm import Farm
@@ -34,6 +33,14 @@ def _as_object_id(val):
         return val["$id"]
     s = str(val)
     return ObjectId(s) if ObjectId.is_valid(s) else None
+
+def _get_fr_ha(fr_doc) -> float:
+    d = fr_doc.get("deforestation")
+    if isinstance(d, dict):
+        v = d.get("ha")
+        if isinstance(v, (int, float)):
+            return float(v)
+    return 0.0
 
 @router.post("/adm3risk/by-analysis-and-adm3")
 def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
@@ -88,71 +95,47 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
             pe_iso = pe.isoformat() if pe else None
             defo_periods[str(son["_id"])] = (ps_iso, pe_iso)
 
-        # 3) Farms de los ADM3 (para computar risk_total desde FarmRisk)
+        # 3) Farms de los ADM3 (para contar total de fincas y mapear FarmRisk->ADM3)
         farms = list(
             Farm.objects(adm3_id__in=valid_adm3_ids)
             .no_dereference()
             .only("id", "adm3_id")
         )
         farm_to_adm3: Dict[str, str] = {}
-        if farms:
-            for f in farms:
-                adm3_id = _as_object_id(getattr(f, "adm3_id", None))
-                if not adm3_id:
-                    continue
-                farm_to_adm3[str(f.id)] = str(adm3_id)
+        adm3_farm_count: Dict[str, int] = {str(oid): 0 for oid in valid_adm3_ids}
+        adm3_seen_farms: Dict[str, set] = {str(oid): set() for oid in valid_adm3_ids}
 
-        # 4) Adm3Risk (fuente de def_ha y farm_amount)
-        adm3risks = list(
-            Adm3Risk.objects(
-                analysis_id__in=valid_analysis_ids,
-                adm3_id__in=valid_adm3_ids
+        for f in farms:
+            adm3_id = _as_object_id(getattr(f, "adm3_id", None))
+            if not adm3_id:
+                continue
+            adm3_id_str = str(adm3_id)
+            farm_id_str = str(f.id)
+            farm_to_adm3[farm_id_str] = adm3_id_str
+            if farm_id_str not in adm3_seen_farms[adm3_id_str]:
+                adm3_seen_farms[adm3_id_str].add(farm_id_str)
+                adm3_farm_count[adm3_id_str] += 1
+
+        if not farm_to_adm3:
+            return {str(aid): [] for aid in valid_analysis_ids}
+
+        # 4) FarmRisk (flags y ha)
+        all_farm_ids = [ObjectId(fid) for fid in farm_to_adm3.keys() if ObjectId.is_valid(fid)]
+        farmrisks = list(
+            FarmRisk.objects(
+                farm_id__in=all_farm_ids,
+                analysis_id__in=valid_analysis_ids
             )
             .no_dereference()
-            .only("id", "adm3_id", "analysis_id", "def_ha", "farm_amount")
+            .only("id", "farm_id", "analysis_id",
+                  "risk_direct", "risk_input", "risk_output",
+                  "deforestation")
         )
 
-        # 5) FarmRisk (fuente de flags booleanos para risk_total)
-        farmrisks = []
-        if farm_to_adm3:
-            all_farm_ids = [ObjectId(fid) if ObjectId.is_valid(fid) else fid for fid in set(farm_to_adm3.keys())]
-            farmrisks = list(
-                FarmRisk.objects(
-                    farm_id__in=all_farm_ids,
-                    analysis_id__in=valid_analysis_ids
-                )
-                .no_dereference()
-                .only("id", "farm_id", "analysis_id", "risk_direct", "risk_input", "risk_output")
-            )
-
-        # 6) Acumuladores por (analysis_id, adm3_id)
-        # valores: {"risk_total": bool, "farm_amount": int, "def_ha": float}
+        # 5) Acumuladores por (analysis_id, adm3_id)
         acc: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        # Inicializar estructura de salida agrupada por analysis_id
-        grouped_results: Dict[str, List[Dict[str, Any]]] = {str(aid): [] for aid in valid_analysis_ids}
+        seen_farms_risk: Dict[Tuple[str, str, str], bool] = {}
 
-        # 6.a) Sumas desde Adm3Risk (def_ha, farm_amount)
-        for r in adm3risks:
-            rdoc = r.to_mongo().to_dict()
-            analysis_id_str = str(_as_object_id(rdoc.get("analysis_id")) or rdoc.get("analysis_id"))
-            adm3_id_str = str(_as_object_id(rdoc.get("adm3_id")) or rdoc.get("adm3_id"))
-            if not analysis_id_str or not adm3_id_str:
-                continue
-
-            acc.setdefault(analysis_id_str, {}).setdefault(adm3_id_str, {
-                "risk_total": False,
-                "farm_amount": 0,
-                "def_ha": 0.0
-            })
-
-            fm = rdoc.get("farm_amount")
-            dh = rdoc.get("def_ha")
-            if fm is not None:
-                acc[analysis_id_str][adm3_id_str]["farm_amount"] = int(acc[analysis_id_str][adm3_id_str]["farm_amount"]) + int(fm)
-            if dh is not None:
-                acc[analysis_id_str][adm3_id_str]["def_ha"] = float(acc[analysis_id_str][adm3_id_str]["def_ha"]) + float(dh)
-
-        # 6.b) OR de flags desde FarmRisk (risk_total)
         for fr in farmrisks:
             fr_doc = fr.to_mongo().to_dict()
             farm_id_str = str(_as_object_id(fr_doc.get("farm_id")) or fr_doc.get("farm_id"))
@@ -164,16 +147,24 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
             if not analysis_id_str:
                 continue
 
-            acc.setdefault(analysis_id_str, {}).setdefault(adm3_id_str, {
+            bucket = acc.setdefault(analysis_id_str, {}).setdefault(adm3_id_str, {
                 "risk_total": False,
-                "farm_amount": 0,
                 "def_ha": 0.0
             })
 
             any_flag = bool(fr_doc.get("risk_direct") or fr_doc.get("risk_input") or fr_doc.get("risk_output"))
-            acc[analysis_id_str][adm3_id_str]["risk_total"] = bool(acc[analysis_id_str][adm3_id_str]["risk_total"] or any_flag)
+            bucket["risk_total"] = bucket["risk_total"] or any_flag
 
-        # 7) Construir salida agrupada por analysis_id, enriqueciendo con periodos
+            if any_flag:
+                key = (analysis_id_str, adm3_id_str, farm_id_str)
+                if key not in seen_farms_risk:
+                    seen_farms_risk[key] = True
+                    fr_ha = _get_fr_ha(fr_doc)
+                    bucket["def_ha"] += fr_ha
+
+        # 6) Construir salida agrupada por analysis_id
+        grouped_results: Dict[str, List[Dict[str, Any]]] = {str(aid): [] for aid in valid_analysis_ids}
+
         for analysis in analyses:
             a_id_str = str(analysis.id)
             defo_id = _as_object_id(getattr(analysis, "deforestation_id", None))
@@ -181,12 +172,10 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
             if defo_id and str(defo_id) in defo_periods:
                 ps_iso, pe_iso = defo_periods[str(defo_id)]
 
-            # Para cada adm3 solicitado, si no hay bucket lo devolvemos con ceros y risk_total=False
             for adm3_oid in valid_adm3_ids:
                 adm3_id_str = str(adm3_oid)
                 vals = acc.get(a_id_str, {}).get(adm3_id_str, {
                     "risk_total": False,
-                    "farm_amount": 0,
                     "def_ha": 0.0
                 })
                 grouped_results[a_id_str].append({
@@ -195,8 +184,8 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                     "period_start": ps_iso,
                     "period_end": pe_iso,
                     "risk_total": bool(vals["risk_total"]),
-                    "farm_amount": int(vals["farm_amount"]) if vals["farm_amount"] is not None else None,
-                    "def_ha": float(vals["def_ha"]) if vals["def_ha"] is not None else None,
+                    "farm_amount": adm3_farm_count.get(adm3_id_str, 0),
+                    "def_ha": vals["def_ha"],
                 })
 
         return grouped_results
