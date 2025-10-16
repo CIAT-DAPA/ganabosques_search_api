@@ -2,14 +2,12 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, RootModel
 from typing import List, Dict, Literal, Optional, Tuple
-from bson import ObjectId
-from bson.dbref import DBRef
+from bson import ObjectId, DBRef
 
-from ganabosques_orm.collections.deforestation import Deforestation
-from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.adm3 import Adm3
-from ganabosques_orm.collections.farm import Farm
-from ganabosques_orm.collections.farmrisk import FarmRisk
+from ganabosques_orm.collections.adm3risk import Adm3Risk
+from ganabosques_orm.collections.analysis import Analysis
+from ganabosques_orm.collections.deforestation import Deforestation
 
 router = APIRouter()
 MAX_IDS = 500
@@ -35,21 +33,6 @@ class Adm3Group(BaseModel):
 class Adm3RiskGroupedResponse(RootModel[Dict[str, Adm3Group]]):
     pass
 
-def _validate_object_ids(ids: List[str], label: str = "ids") -> List[ObjectId]:
-    if not ids:
-        raise HTTPException(status_code=400, detail=f"'{label}' no puede estar vacío")
-    if len(ids) > MAX_IDS:
-        raise HTTPException(status_code=400, detail=f"'{label}' excede el máximo de {MAX_IDS} IDs")
-    out: List[ObjectId] = []
-    seen: set[str] = set()
-    for raw in ids:
-        if not ObjectId.is_valid(raw):
-            raise HTTPException(status_code=400, detail=f"Invalid {label[:-1]}: {raw}")
-        if raw not in seen:
-            seen.add(raw)
-            out.append(ObjectId(raw))
-    return out
-
 def _as_object_id(val):
     if val is None:
         return None
@@ -57,12 +40,20 @@ def _as_object_id(val):
         return val
     if isinstance(val, DBRef):
         return val.id
-    if hasattr(val, "id"):
-        return val.id
     if isinstance(val, dict) and "$id" in val:
-        return val["$id"]
+        inner = val["$id"]
+        return inner if isinstance(inner, ObjectId) else (ObjectId(inner) if ObjectId.is_valid(str(inner)) else None)
     s = str(val)
     return ObjectId(s) if ObjectId.is_valid(s) else None
+
+def _validate_object_ids(ids: List[str]) -> List[ObjectId]:
+    out: List[ObjectId] = []
+    for raw in ids:
+        oid = _as_object_id(raw)
+        if not oid:
+            raise HTTPException(status_code=400, detail=f"Invalid ObjectId: {raw}")
+        out.append(oid)
+    return out
 
 def _split_label(label: Optional[str]):
     if not label:
@@ -70,165 +61,102 @@ def _split_label(label: Optional[str]):
     parts = [p.strip() for p in str(label).split(",")]
     dep = parts[0] if len(parts) >= 1 else None
     mun = parts[1] if len(parts) >= 2 else None
-    nm  = parts[2] if len(parts) >= 3 else None
+    nm = parts[2] if len(parts) >= 3 else None
     return dep, mun, nm
 
-def _get_fr_ha(fr_doc) -> float:
-    d = fr_doc.get("deforestation")
-    if isinstance(d, dict):
-        v = d.get("ha")
-        if isinstance(v, (int, float)):
-            return float(v)
-    return 0.0
 
 @router.post("/adm3risk/by-adm3-and-type", response_model=Adm3RiskGroupedResponse)
 def get_adm3risk_by_adm3_and_type(payload: RequestBody):
+    try:
+        valid_adm3_ids = _validate_object_ids(payload.adm3_ids)
 
-    # 1) Validación
-    valid_adm3_ids = _validate_object_ids(payload.adm3_ids, "adm3_ids")
-    defo_type = payload.type
-
-    # 2) Metadatos ADM3
-    adm3_docs = list(
-        Adm3.objects(id__in=valid_adm3_ids)
-        .no_dereference()
-        .only("id", "name", "label")
-    )
-    adm3_meta: Dict[str, Dict[str, Optional[str]]] = {}
-    for d in adm3_docs:
-        dep, mun, _ = _split_label(getattr(d, "label", None))
-        adm3_meta[str(d.id)] = {
-            "name": getattr(d, "name", None),
-            "department": dep,
-            "municipality": mun,
-        }
-    grouped: Dict[str, Adm3Group] = {
-        str(oid): Adm3Group(
-            adm3_id=str(oid),
-            name=adm3_meta.get(str(oid), {}).get("name"),
-            department=adm3_meta.get(str(oid), {}).get("department"),
-            municipality=adm3_meta.get(str(oid), {}).get("municipality"),
-            items=[]
+        adm3_docs = list(
+            Adm3.objects(id__in=valid_adm3_ids)
+            .no_dereference()
+            .only("id", "name", "label")
         )
-        for oid in valid_adm3_ids
-    }
-
-    # 3) Farms -> mapa FarmRisk->ADM3 + total de fincas
-    farms = list(
-        Farm.objects(adm3_id__in=valid_adm3_ids)
-        .no_dereference()
-        .only("id", "adm3_id")
-    )
-    farm_to_adm3: Dict[str, str] = {}
-    adm3_farm_count: Dict[str, int] = {str(oid): 0 for oid in valid_adm3_ids}
-    adm3_seen_farms: Dict[str, set] = {str(oid): set() for oid in valid_adm3_ids}
-
-    for f in farms:
-        adm3_id = _as_object_id(getattr(f, "adm3_id", None))
-        if not adm3_id:
-            continue
-        adm3_id_str = str(adm3_id)
-        farm_id_str = str(f.id)
-        farm_to_adm3[farm_id_str] = adm3_id_str
-        if farm_id_str not in adm3_seen_farms[adm3_id_str]:
-            adm3_seen_farms[adm3_id_str].add(farm_id_str)
-            adm3_farm_count[adm3_id_str] += 1
-
-    if not farm_to_adm3:
-        return Adm3RiskGroupedResponse(root={})
-
-    # 4) FarmRisk
-    all_farm_ids = [ObjectId(fid) for fid in farm_to_adm3.keys() if ObjectId.is_valid(fid)]
-    farmrisks = list(
-        FarmRisk.objects(farm_id__in=all_farm_ids)
-        .no_dereference()
-        .only("id", "farm_id", "analysis_id",
-              "risk_direct", "risk_input", "risk_output",
-              "deforestation")
-    )
-    if not farmrisks:
-        return Adm3RiskGroupedResponse(root={})
-
-    # 5) Analyses -> deforestation_id
-    analysis_ids = {_as_object_id(fr.analysis_id) for fr in farmrisks if getattr(fr, "analysis_id", None)}
-    analyses = list(
-        Analysis.objects(id__in=list(analysis_ids))
-        .no_dereference()
-        .only("id", "deforestation_id")
-    )
-    analysis_to_defo: Dict[str, str] = {}
-    for a in analyses:
-        did = _as_object_id(getattr(a, "deforestation_id", None))
-        if did:
-            analysis_to_defo[str(a.id)] = str(did)
-
-    # 6) Deforestations (para periodos y filtro por type)
-    defo_ids = [ObjectId(v) for v in analysis_to_defo.values() if ObjectId.is_valid(v)]
-    deforestations = list(
-        Deforestation.objects(id__in=defo_ids, deforestation_type=defo_type)
-        .no_dereference()
-        .only("id", "period_start", "period_end")
-    )
-    defo_periods = {}
-    for d in deforestations:
-        son = d.to_mongo().to_dict()
-        ps = son.get("period_start")
-        pe = son.get("period_end")
-        defo_periods[str(son["_id"])] = (
-            ps.isoformat() if ps else None,
-            pe.isoformat() if pe else None,
-        )
-    defo_id_set = set(defo_periods.keys())
-
-    # 7) Acumuladores
-    acc: Dict[str, Dict[str, Dict[str, object]]] = {str(oid): {} for oid in valid_adm3_ids}
-    seen_farms_risk: Dict[Tuple[str, str], set] = {}
-
-    for fr in farmrisks:
-        fr_doc = fr.to_mongo().to_dict()
-        farm_id_str = str(_as_object_id(fr_doc.get("farm_id")) or fr_doc.get("farm_id"))
-        adm3_id_str = farm_to_adm3.get(farm_id_str)
-        if not adm3_id_str:
-            continue
-
-        analysis_id_str = str(_as_object_id(fr_doc.get("analysis_id")) or fr_doc.get("analysis_id"))
-        defo_id_str = analysis_to_defo.get(analysis_id_str)
-        if not defo_id_str or defo_id_str not in defo_id_set:
-            continue
-
-        any_flag = bool(fr_doc.get("risk_direct") or fr_doc.get("risk_input") or fr_doc.get("risk_output"))
-
-        bucket = acc.setdefault(adm3_id_str, {}).setdefault(defo_id_str, {
-            "risk_total": False,
-            "def_ha": 0.0
-        })
-
-        bucket["risk_total"] = bucket["risk_total"] or any_flag
-
-        if not any_flag:
-            continue
-
-        key = (adm3_id_str, defo_id_str)
-        if key not in seen_farms_risk:
-            seen_farms_risk[key] = set()
-
-        if farm_id_str not in seen_farms_risk[key]:
-            seen_farms_risk[key].add(farm_id_str)
-            fr_ha = _get_fr_ha(fr_doc)
-            bucket["def_ha"] += fr_ha
-
-    # 8) Respuesta
-    for adm3_id_str, periods_map in acc.items():
-        for defo_id_str, vals in periods_map.items():
-            ps_iso, pe_iso = defo_periods.get(defo_id_str, (None, None))
-            grouped[adm3_id_str].items.append(
-                Adm3PeriodItem(
-                    period_start=ps_iso,
-                    period_end=pe_iso,
-                    risk_total=bool(vals["risk_total"]),
-                    farm_amount=adm3_farm_count.get(adm3_id_str, 0),
-                    def_ha=vals["def_ha"],
-                )
+        grouped: Dict[str, Adm3Group] = {}
+        for d in adm3_docs:
+            dep, mun, _ = _split_label(getattr(d, "label", None))
+            grouped[str(d.id)] = Adm3Group(
+                adm3_id=str(d.id),
+                name=getattr(d, "name", None),
+                department=dep,
+                municipality=mun,
+                items=[]
             )
 
-    return Adm3RiskGroupedResponse(root=grouped)
+        deforestations = list(
+            Deforestation.objects(deforestation_type=payload.type)
+            .no_dereference()
+            .only("id", "period_start", "period_end")
+        )
+        defo_periods: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        for d in deforestations:
+            doc = d.to_mongo().to_dict()
+            ps, pe = doc.get("period_start"), doc.get("period_end")
+            defo_periods[str(doc["_id"])] = (
+                ps.isoformat() if ps else None,
+                pe.isoformat() if pe else None,
+            )
+        if not defo_periods:
+            return Adm3RiskGroupedResponse(root=grouped)
+
+        analyses = list(
+            Analysis.objects(deforestation_id__in=list(defo_periods.keys()))
+            .no_dereference()
+            .only("id", "deforestation_id")
+        )
+        analysis_to_defo: Dict[str, str] = {}
+        for a in analyses:
+            did = _as_object_id(getattr(a, "deforestation_id", None))
+            if did:
+                analysis_to_defo[str(a.id)] = str(did)
+
+        coll = Adm3Risk._get_collection()
+        cursor = list(
+            coll.find(
+                {
+                    "analysis_id": {"$in": [ObjectId(aid) for aid in analysis_to_defo.keys()]},
+                    "adm3_id": {"$in": valid_adm3_ids},
+                },
+                projection={
+                    "_id": 0,
+                    "analysis_id": 1,
+                    "adm3_id": 1,
+                    "risk_total": 1,
+                    "farm_amount": 1,
+                    "def_ha": 1,
+                },
+            )
+        )
+        existing_map = {
+            (str(doc["adm3_id"]), str(doc["analysis_id"])): doc for doc in cursor
+        }
+
+        for adm3_id in [str(x) for x in valid_adm3_ids]:
+            grouped.setdefault(adm3_id, Adm3Group(adm3_id=adm3_id, items=[]))
+
+            for analysis_id, defo_id in analysis_to_defo.items():
+                ps_iso, pe_iso = defo_periods.get(defo_id, (None, None))
+                key = (adm3_id, analysis_id)
+                doc = existing_map.get(key)
+
+                grouped[adm3_id].items.append(
+                    Adm3PeriodItem(
+                        period_start=ps_iso,
+                        period_end=pe_iso,
+                        risk_total=bool(doc["risk_total"]) if doc else False,
+                        farm_amount=int(doc["farm_amount"]) if doc else 0,
+                        def_ha=float(doc["def_ha"]) if doc else 0.0,
+                    )
+                )
+
+            grouped[adm3_id].items = list(reversed(grouped[adm3_id].items))
+
+        return Adm3RiskGroupedResponse(root=grouped)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
