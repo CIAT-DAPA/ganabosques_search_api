@@ -14,7 +14,6 @@ from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.farmpolygons import FarmPolygons
 
-# --- NUEVOS IMPORTS PARA ADM ---
 from ganabosques_orm.collections.adm1 import Adm1
 from ganabosques_orm.collections.adm2 import Adm2
 
@@ -60,7 +59,6 @@ def _stringify(v: Any) -> Any:
 def _doc_to_dict(doc) -> Dict[str, Any]:
     return _stringify(doc.to_mongo().to_dict())
 
-# ----------------- utilidades de providers (farm + farm_polygon + risk) -----------------
 
 def _build_providers_from_er_list(
     ers: List[Dict[str, Any]],
@@ -103,17 +101,14 @@ def _build_providers_from_er_list(
 
     return {"inputs": inputs_entries, "outputs": outputs_entries}
 
-# ----------------- ENDPOINT combinado (actual + histórico) -----------------
 
 @router.post("/enterprise-risk/details/by-enterprise")
 def get_enterprise_risk_grouped_by_enterprise(payload: Request):
-    # ====== 1) Validaciones ======
     analysis_oid = _as_object_id(payload.analysis_id)
     if not analysis_oid:
         raise HTTPException(status_code=400, detail="analysis_id inválido")
     enterprise_oids = _validate_oids(payload.enterprise_ids, "enterprise_ids")
 
-    # ====== 2) EnterpriseRisk del análisis actual ======
     er_query_current = {"analysis_id": analysis_oid}
     if enterprise_oids:
         er_query_current["enterprise_id__in"] = enterprise_oids
@@ -125,18 +120,15 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
     )
     er_list_current = [_doc_to_dict(er) for er in er_docs_current]
 
-    # Si no mandaron enterprise_ids, deducirlos del ER actual
     if not enterprise_oids:
         enterprise_oids = [ObjectId(er["enterprise_id"]) for er in er_list_current if _as_object_id(er.get("enterprise_id"))]
 
-    # ====== 3) Indexar ER actual por enterprise ======
     er_current_by_ent: Dict[str, List[Dict[str, Any]]] = {}
     for er in er_list_current:
         ent_id = str(_as_object_id(er.get("enterprise_id")))
         if ent_id:
             er_current_by_ent.setdefault(ent_id, []).append(er)
 
-    # ====== 4) Recolectar TODOS los FarmRisk IDs requeridos por la vista actual ======
     farmrisk_ids_current: set[ObjectId] = set()
     for ers in er_current_by_ent.values():
         for er in ers:
@@ -147,7 +139,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
                 oid = _as_object_id(rid)
                 if oid: farmrisk_ids_current.add(oid)
 
-    # ====== 5) (Temporal) Preparar índices para farms y polygons de la vista actual ======
     fr_dicts_current: List[Dict[str, Any]] = []
     if farmrisk_ids_current:
         fr_docs = list(
@@ -188,10 +179,9 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
         )
         for fp in fp_docs:
             d = _doc_to_dict(fp)
-            d.pop("_id", None)  # omitir _id del polígono
+            d.pop("_id", None)  
             polygon_by_id_current[str(_as_object_id(fp.id))] = d
 
-    # ====== 6) Traer Enterprises base ======
     ent_ids_unique = list({str(eid) for eid in enterprise_oids})
     ent_oid_list = [ObjectId(eid) for eid in ent_ids_unique if ObjectId.is_valid(eid)]
     ent_docs = list(
@@ -202,8 +192,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
     ent_list = [_doc_to_dict(e) for e in ent_docs]
     ent_by_id: Dict[str, Dict[str, Any]] = {e["_id"]: e for e in ent_list}
 
-    # ====== 6b) Resolver nombres ADM2 y ADM1 ======
-    # 1) Juntar todos los adm2_id presentes en enterprises
     adm2_oid_set: set[ObjectId] = set()
     for e in ent_list:
         a2 = _as_object_id(e.get("adm2_id"))
@@ -219,7 +207,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
         )
         adm2_by_id = {d["_id"]: d for d in (_doc_to_dict(x) for x in adm2_docs)}
 
-    # 2) Con los adm2 resueltos, extraer todos los adm1_id
     adm1_oid_set: set[ObjectId] = set()
     for a2 in adm2_by_id.values():
         a1 = _as_object_id(a2.get("adm1_id"))
@@ -235,12 +222,10 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
         )
         adm1_by_id = {d["_id"]: d for d in (_doc_to_dict(x) for x in adm1_docs)}
 
-    # ====== 7) Construir providers (vista actual) por enterprise ======
     def build_current_providers(ent_id: str) -> Dict[str, List[Dict[str, Any]]]:
         ers = er_current_by_ent.get(ent_id, [])
         return _build_providers_from_er_list(ers, fr_by_id_current, farm_by_id_current, polygon_by_id_current)
 
-    # ====== 8) HISTÓRICO (todos los ER de esas enterprises) ======
     er_docs_hist = list(
         EnterpriseRisk.objects(enterprise_id__in=enterprise_oids)
         .no_dereference()
@@ -253,7 +238,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
         if ent_id:
             er_hist_by_ent.setdefault(ent_id, []).append(er)
 
-    # ---- Analyses + Deforestations del histórico ----
     analysis_ids_hist: List[ObjectId] = []
     for er in er_list_hist:
         aid = _as_object_id(er.get("analysis_id"))
@@ -283,7 +267,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
     )
     defo_by_id_hist: Dict[str, Dict[str, Any]] = {str(d.id): _doc_to_dict(d) for d in defos_hist}
 
-    # ---- FarmRisk + Farm del histórico (sin polígono en histórico) ----
     fr_ids_hist: set[ObjectId] = set()
     for er in er_list_hist:
         for rid in (er.get("risk_input") or []):
@@ -295,7 +278,6 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
 
     fr_by_id_hist: Dict[str, Dict[str, Any]] = {}
     farm_by_id_hist: Dict[str, Dict[str, Any]] = {}
-    # polygon_by_id_hist se omite para no incluir polígono en histórico
 
     if fr_ids_hist:
         # FarmRisk
@@ -345,7 +327,7 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
                 [er],
                 fr_by_id_hist,
                 farm_by_id_hist,
-                {}  # <- sin polígono en histórico
+                {}  
             )
             item = {
                 "period_start": defo.get("period_start"),
@@ -357,14 +339,12 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
             else:
                 cumulative_items.append(item)
 
-        # (Opcional) Ordenar por periodo
         def _key(it): return (it.get("period_start") or "")
         annual_items.sort(key=_key)
         cumulative_items.sort(key=_key)
 
         return {"annual": annual_items, "cumulative": cumulative_items}
 
-    # ====== 9) Respuesta combinada ======
     enterprises_out: List[Dict[str, Any]] = []
     for ent_id, ent_doc in ent_by_id.items():
         current_providers = build_current_providers(ent_id)
@@ -385,10 +365,8 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
             "ext_id": ent_doc.get("ext_id"),
             "type_enterprise": ent_doc.get("type_enterprise"),
 
-            # id crudo por compatibilidad (si lo usas en el front)
             "adm2_id": ent_doc.get("adm2_id"),
 
-            # NUEVOS: objetos con nombres resueltos
             "adm2": (
                 {"_id": adm2_id_str, "name": adm2_doc.get("name")}
                 if adm2_doc else None
@@ -401,8 +379,8 @@ def get_enterprise_risk_grouped_by_enterprise(payload: Request):
                 if (adm2_doc and adm1_doc) else None
             ),
 
-            "providers": current_providers,  # vista actual (analysis_id)
-            "history": history_buckets      # histórico (annual/cumulative)
+            "providers": current_providers,  
+            "history": history_buckets     
         })
 
     return enterprises_out
