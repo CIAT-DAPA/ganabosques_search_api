@@ -180,3 +180,5 @@ def get_enterprise_by_name(
     # 3) Buscar y devolver
     matches = Enterprise.objects(__raw__=query)
     return [serialize_enterprise(e) for e in matches]
+
+    
