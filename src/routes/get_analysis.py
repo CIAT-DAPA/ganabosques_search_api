@@ -10,10 +10,9 @@ def get_analysis_by_deforestation(deforestation_id: str):
         if not ObjectId.is_valid(deforestation_id):
             raise HTTPException(status_code=400, detail="ID de deforestación inválido")
 
-        # Si quieres evitar múltiples queries por cada doc, usa select_related (deja el deref activo)
         analysis_docs = (
             Analysis.objects(deforestation_id=ObjectId(deforestation_id))
-            .select_related()  # trae el doc referenciado para doc.deforestation_id
+            .select_related() 
         )
 
         if not analysis_docs:
@@ -21,10 +20,8 @@ def get_analysis_by_deforestation(deforestation_id: str):
 
         resp = []
         for doc in analysis_docs:
-            # defo puede ser None si no dereferenció; lo tratamos con cuidado
             defo = getattr(doc, "deforestation_id", None)
 
-            # Campos de deforestation (con period_* en vez de year_*)
             deforestation_source = (
                 str(defo.deforestation_source.value) if getattr(defo, "deforestation_source", None) else None
             )
@@ -46,7 +43,6 @@ def get_analysis_by_deforestation(deforestation_id: str):
                 "farming_areas_id": str(doc.farming_areas_id.id) if getattr(doc, "farming_areas_id", None) else None,
                 "deforestation_id": str(defo.id) if defo else None,
 
-                # ⬇️ period_* en lugar de year_*
                 "deforestation_source": deforestation_source,
                 "deforestation_type": deforestation_type,
                 "deforestation_name": deforestation_name,
@@ -63,5 +59,4 @@ def get_analysis_by_deforestation(deforestation_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        # No expongas trazas internas; mensaje claro y conciso
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")

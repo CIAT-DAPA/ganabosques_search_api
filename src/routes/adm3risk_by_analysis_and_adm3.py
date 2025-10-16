@@ -8,11 +8,9 @@ import logging
 
 from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
-from ganabosques_orm.collections.farm import Farm
-from ganabosques_orm.collections.farmrisk import FarmRisk
+from ganabosques_orm.collections.adm3risk import Adm3Risk  
 
 router = APIRouter()
-
 log = logging.getLogger("adm3risk_filtered")
 logging.basicConfig(level=logging.INFO)
 
@@ -27,166 +25,115 @@ def _as_object_id(val):
         return val
     if isinstance(val, DBRef):
         return val.id
-    if hasattr(val, "id"):
-        return val.id
-    if isinstance(val, dict) and "$id" in val:
-        return val["$id"]
     s = str(val)
     return ObjectId(s) if ObjectId.is_valid(s) else None
 
-def _get_fr_ha(fr_doc) -> float:
-    d = fr_doc.get("deforestation")
-    if isinstance(d, dict):
-        v = d.get("ha")
-        if isinstance(v, (int, float)):
-            return float(v)
-    return 0.0
+def _safe_iso(dt) -> Optional[str]:
+    try:
+        return dt.isoformat() if dt else None
+    except Exception:
+        return None
 
 @router.post("/adm3risk/by-analysis-and-adm3")
 def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
     try:
-        # 1) Validar ObjectIds
         if not data.analysis_ids or not data.adm3_ids:
             raise HTTPException(status_code=400, detail="analysis_ids y adm3_ids son requeridos")
 
-        valid_analysis_ids: List[ObjectId] = []
-        valid_adm3_ids: List[ObjectId] = []
+        valid_analysis_ids = [ObjectId(a) for a in data.analysis_ids if ObjectId.is_valid(a)]
+        valid_adm3_ids = [ObjectId(a) for a in data.adm3_ids if ObjectId.is_valid(a)]
+        if not valid_analysis_ids or not valid_adm3_ids:
+            raise HTTPException(status_code=400, detail="IDs inválidos")
 
-        for a_id in data.analysis_ids:
-            if ObjectId.is_valid(a_id):
-                valid_analysis_ids.append(ObjectId(a_id))
-            else:
-                raise HTTPException(status_code=400, detail=f"Invalid analysis_id: {a_id}")
-
-        for adm_id in data.adm3_ids:
-            if ObjectId.is_valid(adm_id):
-                valid_adm3_ids.append(ObjectId(adm_id))
-            else:
-                raise HTTPException(status_code=400, detail=f"Invalid adm3_id: {adm_id}")
-
-        # 2) Mapear analysis -> deforestation -> periodos
         analyses = list(
             Analysis.objects(id__in=valid_analysis_ids)
             .no_dereference()
             .only("id", "deforestation_id")
         )
-        if not analyses:
-            return {str(aid): [] for aid in valid_analysis_ids}
-
-        analysis_to_defo: Dict[str, str] = {}
+        defo_periods: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        defo_ids = []
         for a in analyses:
             did = _as_object_id(getattr(a, "deforestation_id", None))
             if did:
-                analysis_to_defo[str(a.id)] = str(did)
-
-        defo_ids = [ObjectId(d) for d in set(analysis_to_defo.values()) if ObjectId.is_valid(d)]
-        deforestations = list(
-            Deforestation.objects(id__in=defo_ids)
-            .no_dereference()
-            .only("id", "period_start", "period_end")
-        )
-
-        defo_periods: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
-        for d in deforestations:
-            son = d.to_mongo().to_dict()
-            ps = son.get("period_start")
-            pe = son.get("period_end")
-            ps_iso = ps.isoformat() if ps else None
-            pe_iso = pe.isoformat() if pe else None
-            defo_periods[str(son["_id"])] = (ps_iso, pe_iso)
-
-        # 3) Farms de los ADM3 (para contar total de fincas y mapear FarmRisk->ADM3)
-        farms = list(
-            Farm.objects(adm3_id__in=valid_adm3_ids)
-            .no_dereference()
-            .only("id", "adm3_id")
-        )
-        farm_to_adm3: Dict[str, str] = {}
-        adm3_farm_count: Dict[str, int] = {str(oid): 0 for oid in valid_adm3_ids}
-        adm3_seen_farms: Dict[str, set] = {str(oid): set() for oid in valid_adm3_ids}
-
-        for f in farms:
-            adm3_id = _as_object_id(getattr(f, "adm3_id", None))
-            if not adm3_id:
-                continue
-            adm3_id_str = str(adm3_id)
-            farm_id_str = str(f.id)
-            farm_to_adm3[farm_id_str] = adm3_id_str
-            if farm_id_str not in adm3_seen_farms[adm3_id_str]:
-                adm3_seen_farms[adm3_id_str].add(farm_id_str)
-                adm3_farm_count[adm3_id_str] += 1
-
-        if not farm_to_adm3:
-            return {str(aid): [] for aid in valid_analysis_ids}
-
-        # 4) FarmRisk (flags y ha)
-        all_farm_ids = [ObjectId(fid) for fid in farm_to_adm3.keys() if ObjectId.is_valid(fid)]
-        farmrisks = list(
-            FarmRisk.objects(
-                farm_id__in=all_farm_ids,
-                analysis_id__in=valid_analysis_ids
+                defo_ids.append(did)
+        if defo_ids:
+            deforestations = list(
+                Deforestation.objects(id__in=defo_ids)
+                .no_dereference()
+                .only("id", "period_start", "period_end")
             )
-            .no_dereference()
-            .only("id", "farm_id", "analysis_id",
-                  "risk_direct", "risk_input", "risk_output",
-                  "deforestation")
+            for d in deforestations:
+                mongo = d.to_mongo().to_dict()
+                defo_periods[str(mongo["_id"])] = (
+                    _safe_iso(mongo.get("period_start")),
+                    _safe_iso(mongo.get("period_end")),
+                )
+
+        coll = Adm3Risk._get_collection()
+        cursor = coll.find(
+            {
+                "analysis_id": {"$in": valid_analysis_ids},
+                "adm3_id": {"$in": valid_adm3_ids},
+            },
+            projection={
+                "_id": 0,
+                "analysis_id": 1,
+                "adm3_id": 1,
+                "risk_total": 1,
+                "def_ha": 1,
+                "farm_amount": 1,
+            },
         )
 
-        # 5) Acumuladores por (analysis_id, adm3_id)
-        acc: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        seen_farms_risk: Dict[Tuple[str, str, str], bool] = {}
+        by_pair: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for doc in cursor:
+            a_id = str(doc["analysis_id"])
+            adm_id = str(doc["adm3_id"])
+            by_pair[(a_id, adm_id)] = {
+                "risk_total": bool(doc.get("risk_total", False)),
+                "def_ha": float(doc.get("def_ha", 0.0)) if doc.get("def_ha") is not None else 0.0,
+                "farm_amount": int(doc.get("farm_amount", 0)) if doc.get("farm_amount") is not None else 0,
+            }
 
-        for fr in farmrisks:
-            fr_doc = fr.to_mongo().to_dict()
-            farm_id_str = str(_as_object_id(fr_doc.get("farm_id")) or fr_doc.get("farm_id"))
-            adm3_id_str = farm_to_adm3.get(farm_id_str)
-            if not adm3_id_str:
-                continue
+        grouped_results: Dict[str, List[Dict[str, Any]]] = {str(a): [] for a in valid_analysis_ids}
 
-            analysis_id_str = str(_as_object_id(fr_doc.get("analysis_id")) or fr_doc.get("analysis_id"))
-            if not analysis_id_str:
-                continue
-
-            bucket = acc.setdefault(analysis_id_str, {}).setdefault(adm3_id_str, {
-                "risk_total": False,
-                "def_ha": 0.0
-            })
-
-            any_flag = bool(fr_doc.get("risk_direct") or fr_doc.get("risk_input") or fr_doc.get("risk_output"))
-            bucket["risk_total"] = bucket["risk_total"] or any_flag
-
-            if any_flag:
-                key = (analysis_id_str, adm3_id_str, farm_id_str)
-                if key not in seen_farms_risk:
-                    seen_farms_risk[key] = True
-                    fr_ha = _get_fr_ha(fr_doc)
-                    bucket["def_ha"] += fr_ha
-
-        # 6) Construir salida agrupada por analysis_id
-        grouped_results: Dict[str, List[Dict[str, Any]]] = {str(aid): [] for aid in valid_analysis_ids}
-
-        for analysis in analyses:
-            a_id_str = str(analysis.id)
-            defo_id = _as_object_id(getattr(analysis, "deforestation_id", None))
+        analysis_periods: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        for a in analyses:
+            a_id_str = str(a.id)
+            did = _as_object_id(getattr(a, "deforestation_id", None))
             ps_iso, pe_iso = (None, None)
-            if defo_id and str(defo_id) in defo_periods:
-                ps_iso, pe_iso = defo_periods[str(defo_id)]
+            if did and str(did) in defo_periods:
+                ps_iso, pe_iso = defo_periods[str(did)]
+            analysis_periods[a_id_str] = (ps_iso, pe_iso)
+
+        for analysis_id in valid_analysis_ids:
+            a_id_str = str(analysis_id)
+            ps_iso, pe_iso = analysis_periods.get(a_id_str, (None, None))
 
             for adm3_oid in valid_adm3_ids:
                 adm3_id_str = str(adm3_oid)
-                vals = acc.get(a_id_str, {}).get(adm3_id_str, {
-                    "risk_total": False,
-                    "def_ha": 0.0
-                })
-                grouped_results[a_id_str].append({
-                    "analysis_id": a_id_str,
-                    "adm3_id": adm3_id_str,
-                    "period_start": ps_iso,
-                    "period_end": pe_iso,
-                    "risk_total": bool(vals["risk_total"]),
-                    "farm_amount": adm3_farm_count.get(adm3_id_str, 0),
-                    "def_ha": vals["def_ha"],
-                })
+                vals = by_pair.get((a_id_str, adm3_id_str))
+
+                if vals:
+                    grouped_results[a_id_str].append({
+                        "analysis_id": a_id_str,
+                        "adm3_id": adm3_id_str,
+                        "period_start": ps_iso,
+                        "period_end": pe_iso,
+                        "risk_total": vals["risk_total"],     
+                        "farm_amount": vals["farm_amount"],  
+                        "def_ha": vals["def_ha"],             
+                    })
+                else:
+                    grouped_results[a_id_str].append({
+                        "analysis_id": a_id_str,
+                        "adm3_id": adm3_id_str,
+                        "period_start": ps_iso,
+                        "period_end": pe_iso,
+                        "risk_total": False,
+                        "farm_amount": 0,
+                        "def_ha": 0.0,
+                    })
 
         return grouped_results
 
