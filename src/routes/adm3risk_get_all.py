@@ -107,6 +107,7 @@ def get_adm3risk_by_adm3_and_type(payload: RequestBody):
             .no_dereference()
             .only("id", "deforestation_id")
         )
+        #analys
         analysis_to_defo: Dict[str, str] = {}
         for a in analyses:
             did = _as_object_id(getattr(a, "deforestation_id", None))
