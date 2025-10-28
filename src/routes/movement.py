@@ -4,10 +4,13 @@ from typing import Optional, List, Dict, Literal, Union
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.movement import Movement
+from ganabosques_orm.collections.farmpolygons import FarmPolygons
+from ganabosques_orm.collections.enterprise import Enterprise
 from ganabosques_orm.enums.species import Species
 from ganabosques_orm.enums.typemovement import TypeMovement
 from mongoengine.queryset.visitor import Q
 import time
+from collections import defaultdict
 from tools.pagination import build_paginated_response, PaginatedResponse
 from tools.logger import logger
 
@@ -103,6 +106,208 @@ def serialize_movement(doc):
             {"label": c.label, "amount": c.amount} for c in (doc.movement or [])
         ],
         "species": str(doc.species.value) if doc.species else None
+    }
+
+
+def process_movements_python(movements, direction, farm_id):
+    """
+    Process movements and generate statistics using pure Python.
+    
+    This function iterates through movement records and accumulates statistics 
+    including animal counts, movement counts, and associated farms/enterprises. 
+    It also performs lookups to retrieve complete details for related entities.
+    
+    Args:
+        movements: QuerySet of Movement documents
+        direction: Direction of movement - "in" (incoming) or "out" (outgoing)
+        farm_id: ObjectId of the farm being analyzed
+    
+    Returns:
+        Dictionary containing farms list, enterprises list, and organized statistics
+    """
+    # Estructuras para acumular datos
+    stats_by_year = defaultdict(lambda: {
+        "species": defaultdict(lambda: defaultdict(lambda: {"headcount": 0, "movements": 0})),
+        "farms": set(),
+        "enterprises": set()
+    })
+    
+    # Contador de movimientos por destino (para farms y enterprises)
+    farm_movement_counts = defaultdict(lambda: {"count": 0, "type": None})
+    enterprise_movement_counts = defaultdict(lambda: {"count": 0, "type": None})
+    
+    for mov in movements:
+        if not mov.date:
+            continue
+            
+        year = str(mov.date.year)
+        species = str(mov.species.value) if mov.species else "unknown"
+        
+        # Procesar clasificaciones
+        for classification in (mov.movement or []):
+            label = classification.label if classification.label else "unknown"
+            amount = classification.amount if classification.amount else 0
+            
+            stats_by_year[year]["species"][species][label]["headcount"] += amount
+            stats_by_year[year]["species"][species][label]["movements"] += 1
+        
+        # Agregar farms/enterprises según dirección
+        if direction == "in":
+            # Entradas: origen es lo que nos interesa
+            if mov.farm_id_origin:
+                farm_id_str = str(mov.farm_id_origin.id)
+                stats_by_year[year]["farms"].add(farm_id_str)
+                farm_movement_counts[farm_id_str]["count"] += 1
+                farm_movement_counts[farm_id_str]["type"] = str(mov.type_origin.value) if mov.type_origin else "FARM"
+            
+            if mov.enterprise_id_origin:
+                ent_id_str = str(mov.enterprise_id_origin.id)
+                stats_by_year[year]["enterprises"].add(ent_id_str)
+                enterprise_movement_counts[ent_id_str]["count"] += 1
+                enterprise_movement_counts[ent_id_str]["type"] = str(mov.type_origin.value) if mov.type_origin else "UNKNOWN"
+        else:
+            # Salidas: destino es lo que nos interesa
+            if mov.farm_id_destination:
+                farm_id_str = str(mov.farm_id_destination.id)
+                stats_by_year[year]["farms"].add(farm_id_str)
+                farm_movement_counts[farm_id_str]["count"] += 1
+                farm_movement_counts[farm_id_str]["type"] = str(mov.type_destination.value) if mov.type_destination else "FARM"
+            
+            if mov.enterprise_id_destination:
+                ent_id_str = str(mov.enterprise_id_destination.id)
+                stats_by_year[year]["enterprises"].add(ent_id_str)
+                enterprise_movement_counts[ent_id_str]["count"] += 1
+                enterprise_movement_counts[ent_id_str]["type"] = str(mov.type_destination.value) if mov.type_destination else "UNKNOWN"
+    
+    # Convertir sets a listas para las estadísticas
+    statistics = {}
+    for year, data in stats_by_year.items():
+        statistics[year] = {
+            "species": {
+                sp: dict(labels) for sp, labels in data["species"].items()
+            },
+            "farms": list(data["farms"]),
+            "enterprises": list(data["enterprises"])
+        }
+    
+    # Hacer lookups de farms y enterprises para obtener detalles completos
+    farms_list = []
+    enterprises_list = []
+    
+    # Lookup farms
+    if farm_movement_counts:
+        farm_ids = [ObjectId(fid) for fid in farm_movement_counts.keys()]
+        farmpolygons = FarmPolygons.objects(farm_id__in=farm_ids)
+        
+        farmpolygons_dict = {str(fp.farm_id.id): fp for fp in farmpolygons if fp.farm_id}
+        
+        for farm_id_str, mov_data in farm_movement_counts.items():
+            if farm_id_str in farmpolygons_dict:
+                fp = farmpolygons_dict[farm_id_str]
+                farms_list.append({
+                    "movements": mov_data["count"],
+                    "direction": direction,
+                    "destination_type": mov_data["type"],
+                    "destination": convert_object_ids(fp.to_mongo().to_dict())
+                })
+    
+    # Lookup enterprises
+    if enterprise_movement_counts:
+        ent_ids = [ObjectId(eid) for eid in enterprise_movement_counts.keys()]
+        enterprises = Enterprise.objects(id__in=ent_ids)
+        
+        enterprises_dict = {str(ent.id): ent for ent in enterprises}
+        
+        for ent_id_str, mov_data in enterprise_movement_counts.items():
+            if ent_id_str in enterprises_dict:
+                ent = enterprises_dict[ent_id_str]
+                enterprises_list.append({
+                    "movements": mov_data["count"],
+                    "direction": direction,
+                    "destination_type": mov_data["type"],
+                    "destination": convert_object_ids(ent.to_mongo().to_dict())
+                })
+    
+    return {
+        "farms": farms_list,
+        "enterprises": enterprises_list,
+        "statistics": statistics
+    }
+
+
+def calculate_mixed_python(inputs_stats, outputs_stats):
+    """
+    Calculate bidirectional movements (mixed) between inputs and outputs.
+    
+    This function identifies farms and enterprises that have both incoming and outgoing 
+    movements within the same year, creating a set intersection for each year.
+    
+    Args:
+        inputs_stats: Dictionary with input statistics organized by year
+        outputs_stats: Dictionary with output statistics organized by year
+    
+    Returns:
+        Dictionary with years as keys and farms/enterprises with bidirectional movements as values
+    """
+    mixed = {}
+    
+    # Obtener todos los años que aparecen en ambos
+    all_years = set(inputs_stats.keys()) | set(outputs_stats.keys())
+    
+    for year in all_years:
+        input_year = inputs_stats.get(year, {"farms": [], "enterprises": []})
+        output_year = outputs_stats.get(year, {"farms": [], "enterprises": []})
+        
+        # Intersección de farms
+        input_farms = set(input_year.get("farms", []))
+        output_farms = set(output_year.get("farms", []))
+        mixed_farms = list(input_farms & output_farms)
+        
+        # Intersección de enterprises
+        input_enterprises = set(input_year.get("enterprises", []))
+        output_enterprises = set(output_year.get("enterprises", []))
+        mixed_enterprises = list(input_enterprises & output_enterprises)
+        
+        mixed[year] = {
+            "farms": mixed_farms,
+            "enterprises": mixed_enterprises
+        }
+    
+    return mixed
+
+
+def calculate_statistics_python_pure(farm_id):
+    """
+    Calculate movement statistics using pure Python processing.
+    
+    This implementation retrieves movements from MongoDB and processes all statistics 
+    in Python, providing better code readability and maintainability compared to 
+    complex MongoDB aggregation pipelines.
+    
+    Args:
+        farm_id: ObjectId of the farm to analyze
+    
+    Returns:
+        Dictionary containing inputs, outputs, and mixed movement statistics
+    """
+    # Query movimientos de entrada y salida
+    movements_in = Movement.objects(farm_id_destination=farm_id)
+    movements_out = Movement.objects(farm_id_origin=farm_id)
+    
+    # Procesar en Python
+    inputs = process_movements_python(movements_in, "in", farm_id)
+    outputs = process_movements_python(movements_out, "out", farm_id)
+    
+    # Calcular mixed
+    mixed = calculate_mixed_python(
+        inputs.get("statistics", {}),
+        outputs.get("statistics", {})
+    )
+    
+    return {
+        "inputs": inputs,
+        "outputs": outputs,
+        "mixed": mixed
     }
 
 router = generate_read_only_router(
@@ -206,7 +411,19 @@ def get_movement_by_enterpriseid(
 def get_movement_by_farmid_grouped(
     ids: str = Query(..., description="One or more farm_ids separated by commas to filter movement records"),
 ):
-    """Search statistics of movements grouped per farm_id"""
+    """
+    Retrieve aggregated movement statistics for one or more farms.
+    
+    This endpoint uses MongoDB aggregation pipelines to efficiently compute movement 
+    statistics including inputs, outputs, and bidirectional movements (mixed) for 
+    the specified farm IDs. Statistics are organized by year, species, and category.
+    
+    Returns detailed information about:
+    - Input movements (animals coming into the farm)
+    - Output movements (animals leaving the farm)
+    - Mixed movements (farms/enterprises with bidirectional traffic)
+    - Categorized statistics by species and classification labels
+    """
     import time
 
     t0 = time.perf_counter()
@@ -340,8 +557,26 @@ def get_movement_by_farmid_grouped(
                         "k": "$_id.label",
                         "v": {"headcount": "$headcount", "movements": "$movements"}
                     }},
-                    "farms": {"$first": "$farms"},
-                    "enterprises": {"$first": "$enterprises"}
+                    "farms": {"$push": "$farms"},
+                    "enterprises": {"$push": "$enterprises"}
+                }},
+                {"$project": {
+                    "_id": "$_id",
+                    "labels": "$labels",
+                    "farms": {
+                        "$reduce": {
+                            "input": "$farms",
+                            "initialValue": [],
+                            "in": {"$setUnion": ["$$value", "$$this"]}
+                        }
+                    },
+                    "enterprises": {
+                        "$reduce": {
+                            "input": "$enterprises",
+                            "initialValue": [],
+                            "in": {"$setUnion": ["$$value", "$$this"]}
+                        }
+                    }
                 }},
                 {"$group": {
                     "_id": "$_id.year",
@@ -382,8 +617,26 @@ def get_movement_by_farmid_grouped(
                         "k": "$_id.label",
                         "v": {"headcount": "$headcount", "movements": "$movements"}
                     }},
-                    "farms": {"$first": "$farms"},
-                    "enterprises": {"$first": "$enterprises"}
+                    "farms": {"$push": "$farms"},
+                    "enterprises": {"$push": "$enterprises"}
+                }},
+                {"$project": {
+                    "_id": "$_id",
+                    "labels": "$labels",
+                    "farms": {
+                        "$reduce": {
+                            "input": "$farms",
+                            "initialValue": [],
+                            "in": {"$setUnion": ["$$value", "$$this"]}
+                        }
+                    },
+                    "enterprises": {
+                        "$reduce": {
+                            "input": "$enterprises",
+                            "initialValue": [],
+                            "in": {"$setUnion": ["$$value", "$$this"]}
+                        }
+                    }
                 }},
                 {"$group": {
                     "_id": "$_id.year",
@@ -453,10 +706,6 @@ def get_movement_by_farmid_grouped(
     }
 ]
 
-
-
-
-
         matches = list(Movement.objects.aggregate(pipeline))
         result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
         results_by_farm[str(farm_id)] = result
@@ -467,13 +716,46 @@ def get_movement_by_farmid_grouped(
 
     return results_by_farm
 
+@router.get("/statistics-by-farmid-python")
+def get_movement_statistics_python_pure(
+    ids: str = Query(..., description="One or more farm_ids separated by commas to filter movement records"),
+):
+    """
+    Retrieve movement statistics using Python-based processing.
+    
+    Alternative implementation that processes movement statistics entirely in Python 
+    rather than using MongoDB aggregation pipelines. This approach offers improved 
+    code readability and easier maintenance while providing the same statistical results.
+    
+    Recommended for scenarios where code clarity is prioritized over query performance.
+    """
+    t0 = time.perf_counter()
+    farm_ids = [ObjectId(i) for i in parse_object_ids(ids)]
+    t1 = time.perf_counter()
 
+    results_by_farm = {}
+
+    for farm_id in farm_ids:
+        result = calculate_statistics_python_pure(farm_id)
+        results_by_farm[str(farm_id)] = result
+
+    t2 = time.perf_counter()
+
+    logger.info(f"[PYTHON PURE] Query for {len(farm_ids)} farm_ids executed in {(t2 - t1)*1000:.2f}ms")
+
+    return results_by_farm
 
 @router.get("/statistics-by-enterpriseid")
 def get_movement_by_farmidtest(
     ids: str = Query(..., description="One enterprise_id to filter movements records"),
 ):
-    """Search statistics of movements by enterprise_id i"""
+    """
+    Retrieve aggregated movement statistics for an enterprise.
+    
+    Computes comprehensive movement statistics for a specific enterprise including 
+    inputs, outputs, and associated farms. Statistics are organized by year, species, 
+    and classification categories.
+    """
 
     t0 = time.perf_counter()
 
@@ -616,6 +898,19 @@ def get_movement_by_farmidtest(
 
 
 def convert_object_ids(obj):
+    """
+    Recursively convert ObjectId instances to strings in nested data structures.
+    
+    This utility function traverses dictionaries, lists, and nested structures to 
+    convert all MongoDB ObjectId instances to their string representation, making 
+    the data JSON-serializable.
+    
+    Args:
+        obj: Data structure to convert (dict, list, ObjectId, or primitive)
+    
+    Returns:
+        Converted data structure with ObjectIds replaced by strings
+    """
     if isinstance(obj, dict):
         return {k: convert_object_ids(v) for k, v in obj.items()}
     elif isinstance(obj, list):
