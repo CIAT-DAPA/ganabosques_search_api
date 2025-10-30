@@ -407,7 +407,6 @@ def get_movement_by_enterpriseid(
     )
     return serialized
 
-@router.get("/statistics-by-farmid")
 def get_movement_by_farmid_grouped(
     ids: str = Query(..., description="One or more farm_ids separated by commas to filter movement records"),
 ):
@@ -716,7 +715,7 @@ def get_movement_by_farmid_grouped(
 
     return results_by_farm
 
-@router.get("/statistics-by-farmid-python")
+@router.get("/statistics-by-farmid")
 def get_movement_statistics_python_pure(
     ids: str = Query(..., description="One or more farm_ids separated by commas to filter movement records"),
 ):
