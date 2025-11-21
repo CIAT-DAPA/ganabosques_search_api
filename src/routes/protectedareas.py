@@ -3,7 +3,7 @@ from fastapi import Query, HTTPException
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
-from ganabosques_orm.collections.deforestation import Deforestation
+from ganabosques_orm.collections.protectedareas import ProtectedAreas
 from tools.pagination import build_paginated_response, PaginatedResponse
 from schemas.logschema import LogSchema
 
@@ -47,7 +47,7 @@ def serialize_protected_area(doc):
 router = generate_read_only_router(
     prefix="/protectedareas",
     tags=["Spatial data"],
-    collection=Deforestation,
+    collection=ProtectedAreas,
     schema_model=ProtectedAreaSchema,
     allowed_fields=["name"],
     serialize_fn=serialize_protected_area,
