@@ -3,7 +3,7 @@ from fastapi import Query, HTTPException
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
-from ganabosques_orm.collections.deforestation import Deforestation
+from ganabosques_orm.collections.farmingareas import FarmingAreas
 from tools.pagination import build_paginated_response, PaginatedResponse
 from schemas.logschema import LogSchema
 
@@ -47,7 +47,7 @@ def serialize_farming_areas(doc):
 router = generate_read_only_router(
     prefix="/farmingareas",
     tags=["Spatial data"],
-    collection=Deforestation,
+    collection=FarmingAreas,
     schema_model=FarmingAreasSchema,
     allowed_fields=["name"],
     serialize_fn=serialize_farming_areas,
