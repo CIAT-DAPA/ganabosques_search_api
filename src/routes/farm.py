@@ -1,5 +1,5 @@
 import re
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -14,9 +14,13 @@ from datetime import datetime
 from ganabosques_orm.enums.source import Source
 from ganabosques_orm.enums.farmsource import FarmSource
 
+from dependencies.auth_guard import require_token  
+
+
 class ExtIdFarmSchema(BaseModel):
     source: Source = Field(..., description="Source system of the external ID")
     ext_code: str = Field(..., description="External code from the source")
+
 
 class FarmSchema(BaseModel):
     id: str = Field(..., description="Internal MongoDB ID of the farm")
@@ -46,6 +50,7 @@ class FarmSchema(BaseModel):
             }
         }
 
+
 def serialize_farm(doc):
     """Serialize a Farm document into a JSON-compatible dictionary."""
     return {
@@ -65,7 +70,9 @@ def serialize_farm(doc):
         } if doc.log else None
     }
 
-router = generate_read_only_router(
+
+# Router interno generado (sin auth)
+_inner_router = generate_read_only_router(
     prefix="/farm",
     tags=["Farm and Enterprise"],
     collection=Farm,
@@ -75,7 +82,8 @@ router = generate_read_only_router(
     include_endpoints=["paged", "by-extid"]
 )
 
-@router.get("/by-adm3", response_model=List[FarmSchema])
+
+@_inner_router.get("/by-adm3", response_model=List[FarmSchema])
 def get_farm_by_adm3_ids(
     ids: str = Query(..., description="Comma-separated Adm3 IDs to filter Farms records")
 ):
@@ -86,6 +94,7 @@ def get_farm_by_adm3_ids(
     search_ids = parse_object_ids(ids)
     matches = Farm.objects(adm3_id__in=search_ids)
     return [serialize_farm(adm) for adm in matches]
+
 
 # Lista de opciones válidas del enum Source
 valid_sources_str = ", ".join([s.value for s in Source])
@@ -104,7 +113,7 @@ valid_sources_str = ", ".join([s.value for s in Source])
 #     """
 #     Retrieve Farm records that match one or more ext_id.ext_code or ext_id.source values.
 #     At least one of the two parameters must be provided.
-
+#
 #     Examples:
 #     - /farm/by-ext-id?ext_codes=SIT-2022-0001,SIT-2023-0005
 #     - /farm/by-ext-id?sources=SIT_CODE,SAGARI
@@ -115,13 +124,13 @@ valid_sources_str = ", ".join([s.value for s in Source])
 #             status_code=400,
 #             detail="At least one of 'ext_codes' or 'sources' must be provided."
 #         )
-
+#
 #     ext_conditions = []
-
+#
 #     if ext_codes:
 #         ext_code_list = [re.escape(code.strip()) for code in ext_codes.split(",") if code.strip()]
 #         ext_conditions.append({"ext_id": {"$elemMatch": {"ext_code": {"$in": ext_code_list }}}})
-
+#
 #     if sources:
 #         raw_sources = [s.strip() for s in sources.split(",") if s.strip()]
 #         invalid_sources = [s for s in raw_sources if s not in Source.__members__]
@@ -134,7 +143,14 @@ valid_sources_str = ", ".join([s.value for s in Source])
 #         enum_sources = [re.escape(Source[s].value) for s in raw_sources]
 #         ext_conditions.append({
 #             "ext_id": {"$elemMatch": {"source": {"$in": enum_sources }}}})
-
+#
 #     query = {"$and": ext_conditions} if len(ext_conditions) == 2 else ext_conditions[0]
 #     farms = Farm.objects(__raw__=query)
 #     return [serialize_farm(farm) for farm in farms]
+
+
+router = APIRouter(
+    dependencies=[Depends(require_token)]  
+)
+
+router.include_router(_inner_router)

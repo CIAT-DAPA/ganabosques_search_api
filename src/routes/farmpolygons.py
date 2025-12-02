@@ -1,6 +1,6 @@
 import re
 import json
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -13,11 +13,14 @@ from tools.utils import parse_object_ids, build_search_query
 
 from ganabosques_orm.enums.ugg import UGG
 from ganabosques_orm.enums.species import Species
+from dependencies.auth_guard import require_token
+
 
 class BufferPolygonSchema(BaseModel):
     ugg: Optional[UGG] = Field(None, description="UGG category of the animals")
     amount: Optional[int] = Field(None, description="Quantity of animals in this UGG category")
     species: Optional[Species] = Field(None, description="Species of the animals in this buffer")
+
 
 class FarmPolygonsSchema(BaseModel):
     id: str = Field(..., description="Internal MongoDB ID of the FarmPolygons")
@@ -56,8 +59,8 @@ class FarmPolygonsSchema(BaseModel):
             }
         }
 
+
 def serialize_farm_polygon(doc):
-    """Serialize a FarmPolygons document into a JSON-compatible dictionary."""
     return {
         "id": str(doc.id),
         "farm_id": str(doc.farm_id.id) if doc.farm_id else None,
@@ -80,7 +83,8 @@ def serialize_farm_polygon(doc):
         } if doc.log else None
     }
 
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/farmpolygons",
     tags=["Farm and Enterprise"],
     collection=FarmPolygons,
@@ -89,25 +93,22 @@ router = generate_read_only_router(
     serialize_fn=serialize_farm_polygon
 )
 
-@router.get("/by-farm", response_model=List[FarmPolygonsSchema])
+
+@_inner_router.get("/by-farm", response_model=List[FarmPolygonsSchema])
 def get_farmpolygons_by_farm_ids(
     ids: str = Query(..., description="Comma-separated Farm IDs to filter FarmPolygonss records")
 ):
-    """
-    Retrieve FarmPolygons records that belong to one or more Farm IDs.
-    Example: /by-farm?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
-    """
     search_ids = parse_object_ids(ids)
     matches = FarmPolygons.objects(farm_id__in=search_ids)
     return [serialize_farm_polygon(poly) for poly in matches]
 
-@router.get("/paged/", response_model=PaginatedResponse[FarmPolygonsSchema])
+
+@_inner_router.get("/paged/", response_model=PaginatedResponse[FarmPolygonsSchema])
 def get_farmpolygon_paginated(
     page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
     limit: int = Query(10, ge=1, description="Maximum records per page"),
     skip: Optional[int] = Query(None, ge=0, description="Number of records to skip. If defined, overrides 'page' parameter"),
 ):
-    """Retrieve paginated Farm Polygons records."""
     base_query = FarmPolygons.objects
 
     return build_paginated_response(
@@ -118,3 +119,10 @@ def get_farmpolygon_paginated(
         skip=skip,
         serialize_fn=serialize_farm_polygon
     )
+
+
+router = APIRouter(
+    dependencies=[Depends(require_token)]
+)
+
+router.include_router(_inner_router)

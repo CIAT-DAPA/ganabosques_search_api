@@ -1,5 +1,5 @@
 # routes/adm3risk_by_adm3_and_type.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, RootModel
 from typing import List, Dict, Literal, Optional, Tuple
 from bson import ObjectId, DBRef
@@ -9,7 +9,13 @@ from ganabosques_orm.collections.adm3risk import Adm3Risk
 from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 
-router = APIRouter()
+from dependencies.auth_guard import require_admin 
+
+router = APIRouter(
+    tags=["Adm3 Risk"],
+    dependencies=[Depends(require_admin)]  
+)
+
 MAX_IDS = 500
 
 class RequestBody(BaseModel):
@@ -107,7 +113,6 @@ def get_adm3risk_by_adm3_and_type(payload: RequestBody):
             .no_dereference()
             .only("id", "deforestation_id")
         )
-        #analys
         analysis_to_defo: Dict[str, str] = {}
         for a in analyses:
             did = _as_object_id(getattr(a, "deforestation_id", None))

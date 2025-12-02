@@ -1,6 +1,6 @@
 import re
 import json
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -10,9 +10,12 @@ from schemas.logschema import LogSchema
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
+from dependencies.auth_guard import require_token
+
 
 class YearsSchema(BaseModel):
     years: str = Field(..., description="Year associated with the supplier relationship")
+
 
 class SuppliersSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the supplier record")
@@ -40,8 +43,8 @@ class SuppliersSchema(BaseModel):
             }
         }
 
+
 def serialize_supplier(doc):
-    """Serialize a Suppliers document into a JSON-compatible dictionary."""
     return {
         "id": str(doc.id),
         "enterprise_id": str(doc.enterprise_id.id) if doc.enterprise_id else None,
@@ -54,7 +57,8 @@ def serialize_supplier(doc):
         } if doc.log else None
     }
 
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/suppliers",
     tags=["Farm and Enterprise"],
     collection=Suppliers,
@@ -64,26 +68,27 @@ router = generate_read_only_router(
     include_endpoints=["paged"]
 )
 
-@router.get("/by-farm", response_model=List[SuppliersSchema])
+
+@_inner_router.get("/by-farm", response_model=List[SuppliersSchema])
 def get_supplier_by_farm_ids(
     ids: str = Query(..., description="Comma-separated Farm IDs to filter Suppliers records")
 ):
-    """
-    Retrieve Suppliers records that belong to one or more Farm IDs.
-    Example: /by-farm?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
-    """
     search_ids = parse_object_ids(ids)
     matches = Suppliers.objects(farm_id__in=search_ids)
     return [serialize_supplier(supe) for supe in matches]
 
-@router.get("/by-enterprise", response_model=List[SuppliersSchema])
+
+@_inner_router.get("/by-enterprise", response_model=List[SuppliersSchema])
 def get_supplier_by_farm_ids(
     ids: str = Query(..., description="Comma-separated Enterprise IDs to filter Suppliers records")
 ):
-    """
-    Retrieve Suppliers records that belong to one or more Enterprise IDs.
-    Example: /by-enterprise?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
-    """
     search_ids = parse_object_ids(ids)
     matches = Suppliers.objects(enterprise_id__in=search_ids)
     return [serialize_supplier(supe) for supe in matches]
+
+
+router = APIRouter(
+    dependencies=[Depends(require_token)]
+)
+
+router.include_router(_inner_router)
