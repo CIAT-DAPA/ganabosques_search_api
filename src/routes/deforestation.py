@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.deforestation import Deforestation
@@ -9,6 +9,7 @@ from schemas.logschema import LogSchema
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
+from dependencies.auth_guard import require_admin  
 
 class DeforestationSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the deforestation record")
@@ -16,7 +17,6 @@ class DeforestationSchema(BaseModel):
     deforestation_type: str = Field(..., description="Type of deforestation data: annual or cumulative")
     name: Optional[str] = Field(None, description="Name or label for the deforestation data")
 
-    # ⬇️ ahora como DateTime; años legacy quedan manejados en el serializer
     period_start: Optional[datetime] = Field(
         None, description="Start datetime of the deforestation period"
     )
@@ -51,18 +51,9 @@ def _to_iso(dt: Optional[datetime]) -> Optional[str]:
 
 def serialize_deforestation(doc):
     """Serialize a Deforestation document into a JSON-compatible dictionary."""
-    # Compatibilidad por si quedan documentos antiguos con year_start/year_end
     period_start = getattr(doc, "period_start", None)
     period_end = getattr(doc, "period_end", None)
 
-    # Si el ORM/Documento aún trae años sueltos como int, conviértelos a datetimes standard
-    if (period_start is None) and hasattr(doc, "period_start"):
-        # ya es None explícito
-        pass
-    if (period_end is None) and hasattr(doc, "period_end"):
-        pass
-
-    # Soporte legacy: si existieran year_start/year_end como int
     if period_start is None and hasattr(doc, "year_start") and doc.year_start is not None:
         period_start = datetime(int(doc.year_start), 1, 1)
     if period_end is None and hasattr(doc, "year_end") and doc.year_end is not None:
@@ -86,7 +77,7 @@ def serialize_deforestation(doc):
         ),
     }
 
-router = generate_read_only_router(
+_inner_router = generate_read_only_router(
     prefix="/deforestation",
     tags=["Spatial data"],
     collection=Deforestation,
@@ -95,3 +86,9 @@ router = generate_read_only_router(
     serialize_fn=serialize_deforestation,
     include_endpoints=["paged", "by-name"]
 )
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)]
+)
+
+router.include_router(_inner_router)

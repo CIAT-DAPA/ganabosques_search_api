@@ -1,5 +1,5 @@
 # routes/adm3risk_by_analysis_and_adm3.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Tuple
 from bson import ObjectId
@@ -10,7 +10,13 @@ from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.adm3risk import Adm3Risk  
 
-router = APIRouter()
+from dependencies.auth_guard import require_admin 
+
+router = APIRouter(
+    tags=["Adm3 Risk"],
+    dependencies=[Depends(require_admin)]   
+)
+
 log = logging.getLogger("adm3risk_filtered")
 logging.basicConfig(level=logging.INFO)
 
@@ -120,9 +126,9 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                         "adm3_id": adm3_id_str,
                         "period_start": ps_iso,
                         "period_end": pe_iso,
-                        "risk_total": vals["risk_total"],     
-                        "farm_amount": vals["farm_amount"],  
-                        "def_ha": vals["def_ha"],             
+                        "risk_total": vals["risk_total"],
+                        "farm_amount": vals["farm_amount"],
+                        "def_ha": vals["def_ha"],
                     })
                 else:
                     grouped_results[a_id_str].append({

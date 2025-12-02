@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from bson import ObjectId
 from ganabosques_orm.collections.farmrisk import FarmRisk
 
-router = APIRouter()
+from dependencies.auth_guard import require_admin  
+
+router = APIRouter(
+    tags=["Farm Risk"],
+    dependencies=[Depends(require_admin)]  
+)
 
 class FarmRiskFilterRequest(BaseModel):
     analysis_ids: List[str]
@@ -13,7 +18,6 @@ class FarmRiskFilterRequest(BaseModel):
 @router.post("/farmrisk/by-analysis-and-farm")
 def get_farmrisk_filtered(data: FarmRiskFilterRequest):
     try:
-        # Validar ObjectIds
         valid_analysis_ids = []
         valid_farm_ids = []
 
@@ -29,13 +33,11 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid farm_id: {f_id}")
 
-        # Consultar documentos que coincidan con ambos filtros
         farmrisks = FarmRisk.objects(
             analysis_id__in=valid_analysis_ids,
             farm_id__in=valid_farm_ids
         )
 
-        # Agrupar por analysis_id
         grouped_results: Dict[str, List[Dict[str, Any]]] = {str(a_id): [] for a_id in valid_analysis_ids}
 
         for fr in farmrisks:

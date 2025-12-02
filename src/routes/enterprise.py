@@ -1,5 +1,5 @@
 import re
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -14,9 +14,13 @@ from datetime import datetime
 from ganabosques_orm.enums.typeenterprise import TypeEnterprise
 from ganabosques_orm.enums.label import Label
 
+from dependencies.auth_guard import require_admin  
+
+
 class ExtIdEnterpriseSchema(BaseModel):
     label: Label = Field(..., description="Label type for the external ID")
     ext_code: str = Field(..., description="External code associated with the label")
+
 
 class EnterpriseSchema(BaseModel):
     id: str = Field(..., description="Internal MongoDB ID of the enterprise")
@@ -52,6 +56,16 @@ class EnterpriseSchema(BaseModel):
             }
         }
 
+
+def safe_float(value):
+    """Devuelve None si el valor no es un float válido para JSON."""
+    if value is None:
+        return None
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    return value
+
+
 def serialize_enterprise(doc):
     """Serialize an Enterprise document into a JSON-compatible dictionary."""
     return {
@@ -74,25 +88,20 @@ def serialize_enterprise(doc):
         } if doc.log else None
     }
 
-router = generate_read_only_router(
+
+# Router interno (NO TOCADO)
+_inner_router = generate_read_only_router(
     prefix="/enterprise",
     tags=["Farm and Enterprise"],
     collection=Enterprise,
     schema_model=EnterpriseSchema,
     allowed_fields=["name", "type_enterprise"],
     serialize_fn=serialize_enterprise,
-    include_endpoints=["paged","by-name", "by-extid"]
+    include_endpoints=["paged", "by-name", "by-extid"]
 )
 
-def safe_float(value):
-    """Devuelve None si el valor no es un float válido para JSON."""
-    if value is None:
-        return None
-    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-        return None
-    return value
 
-@router.get("/by-adm2", response_model=List[EnterpriseSchema])
+@_inner_router.get("/by-adm2", response_model=List[EnterpriseSchema])
 def get_enterprise_by_adm2_ids(
     ids: str = Query(..., description="Comma-separated Adm2 IDs to filter Enterprises records")
 ):
@@ -107,8 +116,9 @@ def get_enterprise_by_adm2_ids(
             status_code=400,
             detail=f"IDs no válidos: {', '.join(invalid_ids)}"
         )
-    matches = Enterprise.objects(adm3_id__in=search_ids)
+    matches = Enterprise.objects(adm2_id__in=[ObjectId(i) for i in search_ids])
     return [serialize_enterprise(enterprise) for enterprise in matches]
+
 
 # valid_labels_str = ", ".join([l.name for l in Label])
 
@@ -123,62 +133,28 @@ def get_enterprise_by_adm2_ids(
 #         description=f"Comma-separated label values to filter in ext_id.label. Valid options: {valid_labels_str}"
 #     )
 # ):
-#     """
-#     Retrieve Enterprise records that match one or more ext_id.ext_code or ext_id.label values.
-#     At least one of the two parameters must be provided.
+#     ...
+#     (NO TOCADO)
 
-#     Examples:
-#     - /enterprise/by-ext-id?ext_codes=CA-2024-007
-#     - /enterprise/by-ext-id?labels=PRODUCTIONUNIT_ID
-#     - /enterprise/by-ext-id?ext_codes=CA-2024-007&labels=PRODUCTIONUNIT_ID
-#     """
-#     if not ext_codes and not labels:
-#         raise HTTPException(
-#             status_code=400,
-#             detail="At least one of 'ext_codes' or 'labels' must be provided."
-#         )
 
-#     query_conditions = []
-
-#     if ext_codes:
-#         ext_code_list = [re.escape(code.strip()) for code in ext_codes.split(",") if code.strip()]
-#         query_conditions.append({"ext_id": {"$elemMatch": {"ext_code": {"$in": ext_code_list}}}})
-
-#     if labels:
-#         raw_labels = [label.strip() for label in labels.split(",") if label.strip()]
-#         invalid_labels = [l for l in raw_labels if l not in Label.__members__]
-#         if invalid_labels:
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail=f"Invalid label(s): {', '.join(invalid_labels)}. "
-#                        f"Valid options: {valid_labels_str}"
-#             )
-#         enum_labels = [re.escape(Label[l].value) for l in raw_labels]
-#         query_conditions.append({"ext_id": {"$elemMatch": {"label": {"$in": enum_labels}}}})
-
-#     query = {"$and": query_conditions} if len(query_conditions) == 2 else query_conditions[0]
-
-#     enterprises = Enterprise.objects(__raw__=query)
-#     return [serialize_enterprise(e) for e in enterprises]
-@router.get("/by-name", response_model=List[EnterpriseSchema])
+@_inner_router.get("/by-name", response_model=List[EnterpriseSchema])
 def get_enterprise_by_name(
     name: str = Query(..., description="Uno o más nombres de empresa (comma-separated) para búsqueda parcial case-insensitive")
 ):
-    """
-    Busca enterprises por su nombre (partial, case-insensitive).
-    Ejemplo: /enterprise/by-name?name=frigorifico,ganaderia
-    """
-    # 1) Parsear términos
+    """Búsqueda parcial insensible a mayúsculas/minúsculas."""
     terms = [t.strip() for t in name.split(",") if t.strip()]
     if not terms:
         raise HTTPException(status_code=400, detail="Debes proporcionar al menos un término en 'name'.")
 
-    # 2) Construir query de regex con OR
     ors = [{"name": {"$regex": re.escape(t), "$options": "i"}} for t in terms]
     query = {"$or": ors}
 
-    # 3) Buscar y devolver
     matches = Enterprise.objects(__raw__=query)
     return [serialize_enterprise(e) for e in matches]
 
-    
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)] 
+)
+
+router.include_router(_inner_router)

@@ -1,5 +1,5 @@
 import re
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -8,6 +8,8 @@ from tools.pagination import build_paginated_response, PaginatedResponse
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
+from dependencies.auth_guard import require_admin
+
 
 class Adm3RiskSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the risk record")
@@ -30,8 +32,8 @@ class Adm3RiskSchema(BaseModel):
             }
         }
 
+
 def serialize_adm3risk(doc):
-    """Serialize an Adm3Risk document into a JSON-compatible dictionary."""
     return {
         "id": str(doc.id),
         "adm3_id": str(doc.adm3_id.id) if doc.adm3_id else None,
@@ -41,7 +43,8 @@ def serialize_adm3risk(doc):
         "risk_total": doc.risk_total
     }
 
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/adm3risk",
     tags=["Analysis risk"],
     collection=Adm3Risk,
@@ -50,3 +53,9 @@ router = generate_read_only_router(
     serialize_fn=serialize_adm3risk,
     include_endpoints=["paged"]
 )
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)]
+)
+
+router.include_router(_inner_router)

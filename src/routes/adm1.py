@@ -1,15 +1,17 @@
 import re
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException,Depends
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.adm1 import Adm1
 from tools.pagination import build_paginated_response, PaginatedResponse
 from tools.utils import parse_object_ids, build_search_query
+from dependencies.auth_guard import  require_admin
 
 router = APIRouter(
     prefix="/adm1",
-    tags=["Admin levels"]
+    tags=["Admin levels"],
+    dependencies=[Depends(require_admin)]
 )
 
 class Adm1Schema(BaseModel):
