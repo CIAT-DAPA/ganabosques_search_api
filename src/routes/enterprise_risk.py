@@ -1,5 +1,5 @@
 # routes/enterprise_risk_details.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Iterable, Optional
 from bson import ObjectId
@@ -17,7 +17,13 @@ from ganabosques_orm.collections.farmpolygons import FarmPolygons
 from ganabosques_orm.collections.adm1 import Adm1
 from ganabosques_orm.collections.adm2 import Adm2
 
-router = APIRouter()
+from dependencies.auth_guard import require_admin  
+
+router = APIRouter(
+    tags=["Enterprise Risk"],
+    dependencies=[Depends(require_admin)] 
+)
+
 MAX_IDS = 500
 
 class Request(BaseModel):

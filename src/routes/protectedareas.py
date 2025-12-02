@@ -1,5 +1,5 @@
 import re
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -9,6 +9,8 @@ from schemas.logschema import LogSchema
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
+from dependencies.auth_guard import require_admin
+
 
 class ProtectedAreaSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the protected area")
@@ -31,8 +33,8 @@ class ProtectedAreaSchema(BaseModel):
             }
         }
 
+
 def serialize_protected_area(doc):
-    """Serialize a ProtectedAreas document into a JSON-compatible dictionary."""
     return {
         "id": str(doc.id),
         "name": doc.name,
@@ -44,7 +46,8 @@ def serialize_protected_area(doc):
         } if doc.log else None
     }
 
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/protectedareas",
     tags=["Spatial data"],
     collection=ProtectedAreas,
@@ -53,3 +56,9 @@ router = generate_read_only_router(
     serialize_fn=serialize_protected_area,
     include_endpoints=["paged", "by-name"]
 )
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)]
+)
+
+router.include_router(_inner_router)

@@ -1,15 +1,14 @@
 import re
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 from ganabosques_orm.collections.analysis import Analysis
 from routes.base_route import generate_read_only_router
+from dependencies.auth_guard import require_admin
 
-# -----------------------------------------------------------------------------
-# Pydantic schema: devolvemos datetimes completos
-# -----------------------------------------------------------------------------
+
 class AnalysisSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the analysis")
     protected_areas_id: Optional[str] = Field(None, description="ID of the referenced ProtectedArea document")
@@ -43,49 +42,27 @@ class AnalysisSchema(BaseModel):
             }
         }
 
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
+
 def _enum_or_str(val):
-    """Devuelve val.value si es Enum; str(val) si no; None si None."""
     if val is None:
         return None
     return str(getattr(val, "value", val))
 
+
 def _to_dt_or_none(val: Union[datetime, str, int, None]) -> Optional[datetime]:
-    """
-    Normaliza un valor a datetime si es posible:
-    - datetime -> tal cual
-    - str ISO -> datetime.fromisoformat (si aplica)
-    - int/float (epoch seconds) -> conviértelo si lo usas así (comentado)
-    - otro -> None
-    """
     if val is None:
         return None
     if isinstance(val, datetime):
         return val
     if isinstance(val, str):
         try:
-            # soporta 'YYYY-MM-DDTHH:MM:SS[.mmm][+offset]'
             return datetime.fromisoformat(val.replace("Z", "+00:00"))
         except ValueError:
             return None
-    # Si en tu modelo guardas epoch segs, puedes habilitar esto:
-    # if isinstance(val, (int, float)):
-    #     try:
-    #         return datetime.fromtimestamp(val, tz=timezone.utc)
-    #     except Exception:
-    #         return None
     return None
 
+
 def _safe_period_end(a) -> datetime:
-    """
-    Devuelve un datetime para ordenar por period_end desc.
-    Prioriza:
-      1) Campo denormalizado en Analysis: deforestation_period_end
-      2) Deforestation.period_end
-      3) datetime.min como centinela
-    """
     denorm = _to_dt_or_none(getattr(a, "deforestation_period_end", None))
     if denorm is not None:
         return denorm
@@ -96,11 +73,9 @@ def _safe_period_end(a) -> datetime:
         if pend is not None:
             return pend
 
-    return datetime.min  # para que queden al final en sort desc
+    return datetime.min
 
-# -----------------------------------------------------------------------------
-# Serializador robusto: devuelve datetimes completos
-# -----------------------------------------------------------------------------
+
 def serialize_analysis(doc):
     d = getattr(doc, "deforestation_id", None)
 
@@ -134,10 +109,8 @@ def serialize_analysis(doc):
         "date": doc.date.isoformat() if getattr(doc, "date", None) else None,
     }
 
-# -----------------------------------------------------------------------------
-# Router
-# -----------------------------------------------------------------------------
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/analysis",
     tags=["Analysis risk"],
     collection=Analysis,
@@ -148,9 +121,16 @@ router = generate_read_only_router(
     include_get_all=False
 )
 
-@router.get("/", response_model=List[AnalysisSchema])
+
+@_inner_router.get("/", response_model=List[AnalysisSchema])
 def get_all():
-    """Retrieve all Analysis records sorted by period_end descending."""
     items = Analysis.objects.select_related()
     items_sorted = sorted(items, key=_safe_period_end, reverse=True)
     return [serialize_analysis(i) for i in items_sorted]
+
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)]
+)
+
+router.include_router(_inner_router)

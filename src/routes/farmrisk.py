@@ -1,12 +1,16 @@
 from typing import Optional
+from fastapi import Depends, APIRouter
 from pydantic import BaseModel, Field
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from routes.base_route import generate_read_only_router
+from dependencies.auth_guard import require_admin
+
 
 class AttributeSchema(BaseModel):
     prop: Optional[float] = Field(None, description="Proportion")
     ha: Optional[float] = Field(None, description="Area in hectares")
     distance: Optional[float] = Field(None, description="Distance to feature")
+
 
 class FarmRiskSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the farm risk")
@@ -14,13 +18,11 @@ class FarmRiskSchema(BaseModel):
     analysis_id: Optional[str] = Field(None, description="ID of the associated analysis")
     farm_polygons_id: Optional[str] = Field(None, description="ID of the associated farm polygon")
 
-    # Subdocumentos
     deforestation: Optional[AttributeSchema] = Field(None, description="Deforestation attributes")
     protected: Optional[AttributeSchema] = Field(None, description="Protected area attributes")
     farming_in: Optional[AttributeSchema] = Field(None, description="Attributes for farming_in")
     farming_out: Optional[AttributeSchema] = Field(None, description="Attributes for farming_out")
 
-    # Riesgos booleanos
     risk_direct: Optional[bool] = Field(None, description="Direct risk (>0 -> true, else false)")
     risk_input: Optional[bool] = Field(None, description="Input-based risk (>0 -> true, else false)")
     risk_output: Optional[bool] = Field(None, description="Output-based risk (>0 -> true, else false)")
@@ -43,10 +45,12 @@ class FarmRiskSchema(BaseModel):
             }
         }
 
+
 def _as_str_oid(value) -> Optional[str]:
     if not value:
         return None
     return str(getattr(value, "id", value))
+
 
 def _serialize_attr(attr) -> Optional[dict]:
     if not attr:
@@ -57,24 +61,24 @@ def _serialize_attr(attr) -> Optional[dict]:
         "distance": getattr(attr, "distance", None),
     }
 
+
 def serialize_farmrisk(doc):
     return {
         "id": str(doc.id),
         "farm_id": _as_str_oid(getattr(doc, "farm_id", None)),
         "analysis_id": _as_str_oid(getattr(doc, "analysis_id", None)),
         "farm_polygons_id": _as_str_oid(getattr(doc, "farm_polygons_id", None)),
-
         "deforestation": _serialize_attr(getattr(doc, "deforestation", None)),
         "protected": _serialize_attr(getattr(doc, "protected", None)),
         "farming_in": _serialize_attr(getattr(doc, "farming_in", None)),
         "farming_out": _serialize_attr(getattr(doc, "farming_out", None)),
-
         "risk_direct": getattr(doc, "risk_direct", None),
         "risk_input": getattr(doc, "risk_input", None),
         "risk_output": getattr(doc, "risk_output", None),
     }
 
-router = generate_read_only_router(
+
+_inner_router = generate_read_only_router(
     prefix="/farmrisk",
     tags=["Analysis risk"],
     collection=FarmRisk,
@@ -86,3 +90,9 @@ router = generate_read_only_router(
     serialize_fn=serialize_farmrisk,
     include_endpoints=["paged"]
 )
+
+router = APIRouter(
+    dependencies=[Depends(require_admin)]
+)
+
+router.include_router(_inner_router)
