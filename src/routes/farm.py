@@ -14,7 +14,7 @@ from datetime import datetime
 from ganabosques_orm.enums.source import Source
 from ganabosques_orm.enums.farmsource import FarmSource
 
-from dependencies.auth_guard import require_token  
+from dependencies.auth_guard import require_admin  
 
 
 class ExtIdFarmSchema(BaseModel):
@@ -150,7 +150,7 @@ valid_sources_str = ", ".join([s.value for s in Source])
 
 
 router = APIRouter(
-    dependencies=[Depends(require_token)]  
+    dependencies=[Depends(require_admin)]  
 )
 
 router.include_router(_inner_router)

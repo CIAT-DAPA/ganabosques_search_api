@@ -14,7 +14,7 @@ from datetime import datetime
 from ganabosques_orm.enums.typeenterprise import TypeEnterprise
 from ganabosques_orm.enums.label import Label
 
-from dependencies.auth_guard import require_token  
+from dependencies.auth_guard import require_admin  
 
 
 class ExtIdEnterpriseSchema(BaseModel):
@@ -154,7 +154,7 @@ def get_enterprise_by_name(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_token)] 
+    dependencies=[Depends(require_admin)] 
 )
 
 router.include_router(_inner_router)

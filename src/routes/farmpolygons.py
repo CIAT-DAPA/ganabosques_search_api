@@ -13,7 +13,7 @@ from tools.utils import parse_object_ids, build_search_query
 
 from ganabosques_orm.enums.ugg import UGG
 from ganabosques_orm.enums.species import Species
-from dependencies.auth_guard import require_token
+from dependencies.auth_guard import require_admin
 
 
 class BufferPolygonSchema(BaseModel):
@@ -122,7 +122,7 @@ def get_farmpolygon_paginated(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_token)]
+    dependencies=[Depends(require_admin)]
 )
 
 router.include_router(_inner_router)

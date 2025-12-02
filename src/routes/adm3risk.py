@@ -8,7 +8,7 @@ from tools.pagination import build_paginated_response, PaginatedResponse
 
 from routes.base_route import generate_read_only_router
 from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import require_token
+from dependencies.auth_guard import require_admin
 
 
 class Adm3RiskSchema(BaseModel):
@@ -55,7 +55,7 @@ _inner_router = generate_read_only_router(
 )
 
 router = APIRouter(
-    dependencies=[Depends(require_token)]
+    dependencies=[Depends(require_admin)]
 )
 
 router.include_router(_inner_router)

@@ -6,12 +6,12 @@ from bson import ObjectId
 from ganabosques_orm.collections.adm2 import Adm2
 from tools.pagination import build_paginated_response, PaginatedResponse
 from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import  require_token
+from dependencies.auth_guard import  require_admin
 
 router = APIRouter(
     prefix="/adm2",
     tags=["Admin levels"],
-    dependencies=[Depends(require_token)]
+    dependencies=[Depends(require_admin)]
 )
 
 class Adm2Schema(BaseModel):

@@ -3,7 +3,7 @@ from fastapi import Depends, APIRouter
 from pydantic import BaseModel, Field
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from routes.base_route import generate_read_only_router
-from dependencies.auth_guard import require_token
+from dependencies.auth_guard import require_admin
 
 
 class AttributeSchema(BaseModel):
@@ -92,7 +92,7 @@ _inner_router = generate_read_only_router(
 )
 
 router = APIRouter(
-    dependencies=[Depends(require_token)]
+    dependencies=[Depends(require_admin)]
 )
 
 router.include_router(_inner_router)

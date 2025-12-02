@@ -18,7 +18,7 @@ from routes.base_route import generate_read_only_router
 from routes.enterprise import EnterpriseSchema
 from routes.farm import FarmSchema
 from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import require_token
+from dependencies.auth_guard import require_admin
 
 
 class ClassificationSchema(BaseModel):
@@ -754,7 +754,7 @@ def convert_object_ids(obj):
 
 
 router = APIRouter(
-    dependencies=[Depends(require_token)]
+    dependencies=[Depends(require_admin)]
 )
 
 router.include_router(_inner_router)
