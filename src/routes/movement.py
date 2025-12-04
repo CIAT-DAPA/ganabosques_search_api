@@ -181,7 +181,8 @@ def process_movements_python(movements, direction, farm_id):
                 destination = {
                     "latitude": fp.latitude,
                     "longitud": fp.longitud,
-                    "ext_id": ext_id_data
+                    "ext_id": ext_id_data,
+                    "farm_id": str(fp.farm_id.id) if fp.farm_id else None
                 }
                 
                 farms_list.append({
