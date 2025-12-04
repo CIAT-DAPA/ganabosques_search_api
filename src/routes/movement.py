@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.movement import Movement
 from ganabosques_orm.collections.farmpolygons import FarmPolygons
+from ganabosques_orm.collections.farm import Farm
 from ganabosques_orm.collections.enterprise import Enterprise
 from ganabosques_orm.enums.species import Species
 from ganabosques_orm.enums.typemovement import TypeMovement
@@ -162,16 +163,32 @@ def process_movements_python(movements, direction, farm_id):
     enterprises_list = []
     if farm_movement_counts:
         farm_ids = [ObjectId(fid) for fid in farm_movement_counts.keys()]
-        farmpolygons = FarmPolygons.objects(farm_id__in=farm_ids)
+        farmpolygons = FarmPolygons.objects(farm_id__in=farm_ids).only('farm_id', 'latitude', 'longitud')
         farmpolygons_dict = {str(fp.farm_id.id): fp for fp in farmpolygons if fp.farm_id}
+        
+        farms = Farm.objects(id__in=farm_ids).only('id', 'ext_id')
+        farms_dict = {str(f.id): f for f in farms}
+        
         for farm_id_str, mov_data in farm_movement_counts.items():
             if farm_id_str in farmpolygons_dict:
                 fp = farmpolygons_dict[farm_id_str]
+                farm_obj = farms_dict.get(farm_id_str)
+                
+                ext_id_data = []
+                if farm_obj and farm_obj.ext_id:
+                    ext_id_data = [convert_object_ids(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
+                
+                destination = {
+                    "latitude": fp.latitude,
+                    "longitud": fp.longitud,
+                    "ext_id": ext_id_data
+                }
+                
                 farms_list.append({
                     "movements": mov_data["count"],
                     "direction": direction,
                     "destination_type": mov_data["type"],
-                    "destination": convert_object_ids(fp.to_mongo().to_dict())
+                    "destination": destination
                 })
     if enterprise_movement_counts:
         ent_ids = [ObjectId(eid) for eid in enterprise_movement_counts.keys()]
@@ -613,7 +630,7 @@ def get_movement_statistics_python_pure(
 
 
 @_inner_router.get("/statistics-by-enterpriseid")
-def get_movement_by_farmidtest(
+def get_movement_statistics_by_enterpriseid(
     ids: str = Query(..., description="One enterprise_id to filter movements records"),
 ):
     t0 = time.perf_counter()
