@@ -21,10 +21,10 @@ class FarmRiskFilterRequest(BaseModel):
 @router.post("/farmrisk/by-analysis-and-farm")
 def get_farmrisk_filtered(data: FarmRiskFilterRequest):
     try:
-        valid_analysis_ids = []
-        valid_farm_ids = []
+        valid_analysis_ids: List[ObjectId] = []
+        valid_farm_ids: List[ObjectId] = []
 
-        # Validación de ObjectIds
+        # Validación de ObjectIds de entrada
         for a_id in data.analysis_ids:
             if ObjectId.is_valid(a_id):
                 valid_analysis_ids.append(ObjectId(a_id))
@@ -38,82 +38,107 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
                 raise HTTPException(status_code=400, detail=f"Invalid farm_id: {f_id}")
 
         # Query de FarmRisk filtrado
-        farmrisks = FarmRisk.objects(
+        farmrisks_qs = FarmRisk.objects(
             analysis_id__in=valid_analysis_ids,
             farm_id__in=valid_farm_ids
         )
 
-        # 1) Obtener todos los farm_id usados en los farmrisks
-        farm_ids_in_results = {
-            fr.farm_id for fr in farmrisks 
-            if getattr(fr, "farm_id", None) is not None
-        }
+        # Lo convertimos a lista para poder iterar varias veces sin problemas
+        farmrisks = list(farmrisks_qs)
 
-        # 2) Cargar todas las farms de una sola vez
+        # ============================
+        # 1) Resolver farms en bloque
+        # ============================
+        farm_ids_in_results = set()
+
+        for fr in farmrisks:
+            farm_ref = getattr(fr, "farm_id", None)
+            if farm_ref is None:
+                continue
+
+            # Si es un objeto Farm (ReferenceField), usamos .id
+            if hasattr(farm_ref, "id"):
+                farm_ids_in_results.add(farm_ref.id)
+            else:
+                # Si ya es ObjectId o similar
+                farm_ids_in_results.add(farm_ref)
+
         farms = Farm.objects(id__in=list(farm_ids_in_results))
-        farms_by_id = {f.id: f for f in farms}
+        farms_by_id: Dict[ObjectId, Farm] = {f.id: f for f in farms}
 
-        # 3) Obtener todos los adm3_id a partir de las farms
-        adm3_ids = {
-            getattr(f, "adm3_id", None)
-            for f in farms
-            if getattr(f, "adm3_id", None) is not None
-        }
+        # ============================
+        # 2) Resolver adm3 en bloque
+        # ============================
+        adm3_ids = set()
 
-        # 4) Cargar todos los Adm3 de una sola vez
+        for f in farms:
+            adm3_ref = getattr(f, "adm3_id", None)
+            if adm3_ref is None:
+                continue
+
+            if hasattr(adm3_ref, "id"):
+                adm3_ids.add(adm3_ref.id)
+            else:
+                adm3_ids.add(adm3_ref)
+
         adm3_docs = Adm3.objects(id__in=list(adm3_ids))
-        adm3_by_id = {a.id: a for a in adm3_docs}
+        adm3_by_id: Dict[ObjectId, Adm3] = {a.id: a for a in adm3_docs}
 
         # Estructura agrupada por analysis_id (como ya tenías)
         grouped_results: Dict[str, List[Dict[str, Any]]] = {
             str(a_id): [] for a_id in valid_analysis_ids
         }
 
+        # ============================
+        # 3) Construir respuesta final
+        # ============================
         for fr in farmrisks:
             doc = fr.to_mongo().to_dict()
             doc["_id"] = str(doc["_id"])
 
-            # Normalizar IDs a string
-            if "farm_id" in doc:
-                farm_id_value = doc["farm_id"]
-                farm_id_str = str(farm_id_value)
+            # Normalizar IDs a string para el JSON
+            farm_id_str = None
+            farm_ref = doc.get("farm_id")
+
+            if farm_ref is not None:
+                # farm_ref aquí normalmente es ObjectId o DBRef en el dict
+                farm_id_str = str(farm_ref)
                 doc["farm_id"] = farm_id_str
-            else:
-                farm_id_value = None
-                farm_id_str = None
 
             if "farm_polygons_id" in doc:
                 doc["farm_polygons_id"] = str(doc["farm_polygons_id"])
 
             analysis_id_str = None
             if "analysis_id" in doc:
-                analysis_id_value = doc["analysis_id"]
-                analysis_id_str = str(analysis_id_value)
+                analysis_id_val = doc["analysis_id"]
+                analysis_id_str = str(analysis_id_val)
                 doc["analysis_id"] = analysis_id_str
 
-            # ============================
-            # Enriquecimiento con Adm3
-            # ============================
+            # ---------------- Enriquecimiento con Adm3 ----------------
             department = None
             municipality = None
             vereda = None
 
-            # Recuperar la Farm usando el farm_id original (ObjectId/DBRef)
-            if farm_id_value is not None:
-                farm = farms_by_id.get(
-                    farm_id_value.id if hasattr(farm_id_value, "id") else farm_id_value
-                )
-            else:
-                farm = None
-
-            if farm is not None:
-                adm3_id = getattr(farm, "adm3_id", None)
-                if adm3_id is not None:
-                    adm3 = adm3_by_id.get(adm3_id)
+            # Recuperar la Farm desde el objeto fr, que sí tiene la referencia viva
+            farm_obj = getattr(fr, "farm_id", None)
+            farm_id_for_lookup = None
+            if farm_obj is not None:
+                if hasattr(farm_obj, "id"):
+                    farm_id_for_lookup = farm_obj.id
                 else:
-                    adm3 = None
-            else:
-                adm3 = None
+                    farm_id_for_lookup = farm_obj
+
+            farm = farms_by_id.get(farm_id_for_lookup) if farm_id_for_lookup is not None else None
+
+            adm3 = None
+            if farm is not None:
+                adm3_ref = getattr(farm, "adm3_id", None)
+                if adm3_ref is not None:
+                    if hasattr(adm3_ref, "id"):
+                        adm3_id_for_lookup = adm3_ref.id
+                    else:
+                        adm3_id_for_lookup = adm3_ref
+                    adm3 = adm3_by_id.get(adm3_id_for_lookup)
 
             if adm3 is not None:
                 label = getattr(adm3, "label", None)
@@ -131,17 +156,16 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
             doc["municipality"] = municipality
             doc["vereda"] = vereda
 
-            # Meter el doc en el grupo por analysis_id
+            # Agregar al grupo correspondiente
             if analysis_id_str is not None and analysis_id_str in grouped_results:
                 grouped_results[analysis_id_str].append(doc)
             else:
-                # Por si acaso el analysis_id del doc no estaba en la lista original
                 grouped_results.setdefault(analysis_id_str or "unknown", []).append(doc)
 
         return grouped_results
 
     except HTTPException:
-        # Re-lanzar las HTTPException explícitas
+        # Re-lanzar las HTTPException explícitas (400, etc.)
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
