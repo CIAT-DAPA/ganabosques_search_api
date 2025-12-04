@@ -37,7 +37,6 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid farm_id: {f_id}")
 
-        # Query de FarmRisk filtrado
         farmrisks = FarmRisk.objects(
             analysis_id__in=valid_analysis_ids,
             farm_id__in=valid_farm_ids
