@@ -37,11 +37,20 @@ pipeline {
                         git pull origin main
 
                         echo "Instalando dependencias en entorno conda..."
-                        /home/ganabosques/.miniforge3/envs/api/bin/pip install -r src/requirements.txt
+
+                        cd /opt/ganabosques/api/ganabosques_search_api
+
+                        python3 -m venv env
+
+                        source env/bin/activate
+
+                        cd src
+                        
+                        pip install -r src/requirements.txt
 
                         echo "Levantando servicio con uvicorn..."
-                        cd src
-                        nohup /home/ganabosques/.miniforge3/envs/api/bin/uvicorn main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
+                        
+                        nohup main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
                     '''
                 }
             }
