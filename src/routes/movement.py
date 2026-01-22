@@ -275,6 +275,148 @@ def calculate_summary(inputs_data, outputs_data):
     return summary
 
 
+def process_movements_python_for_enterprise(movements, direction, enterprise_id):
+    """Procesa movimientos desde la perspectiva de una enterprise"""
+    stats = {
+        "species": defaultdict(lambda: defaultdict(lambda: {"headcount": 0, "movements": 0})),
+        "farms": set(),
+        "enterprises": set()
+    }
+    farm_movement_counts = defaultdict(lambda: {"count": 0, "type": None})
+    enterprise_movement_counts = defaultdict(lambda: {"count": 0, "type": None})
+    movements_by_type = defaultdict(int)
+    total_movements = 0
+    
+    for mov in movements:
+        total_movements += 1
+        
+        # Contar por tipo de movimiento
+        if direction == "in":
+            mov_type = str(mov.type_origin.value) if mov.type_origin else "UNKNOWN"
+        else:
+            mov_type = str(mov.type_destination.value) if mov.type_destination else "UNKNOWN"
+        movements_by_type[mov_type] += 1
+        
+        if not mov.date:
+            continue
+        species = str(mov.species.value) if mov.species else "unknown"
+        for classification in (mov.movement or []):
+            label = classification.label if classification.label else "unknown"
+            amount = classification.amount if classification.amount else 0
+            stats["species"][species][label]["headcount"] += amount
+            stats["species"][species][label]["movements"] += 1
+        if direction == "in":
+            if mov.farm_id_origin:
+                farm_id_str = str(mov.farm_id_origin.id)
+                stats["farms"].add(farm_id_str)
+                farm_movement_counts[farm_id_str]["count"] += 1
+                farm_movement_counts[farm_id_str]["type"] = str(mov.type_origin.value) if mov.type_origin else "FARM"
+            if mov.enterprise_id_origin:
+                ent_id_str = str(mov.enterprise_id_origin.id)
+                stats["enterprises"].add(ent_id_str)
+                enterprise_movement_counts[ent_id_str]["count"] += 1
+                enterprise_movement_counts[ent_id_str]["type"] = str(mov.type_origin.value) if mov.type_origin else "UNKNOWN"
+        else:
+            if mov.farm_id_destination:
+                farm_id_str = str(mov.farm_id_destination.id)
+                stats["farms"].add(farm_id_str)
+                farm_movement_counts[farm_id_str]["count"] += 1
+                farm_movement_counts[farm_id_str]["type"] = str(mov.type_destination.value) if mov.type_destination else "FARM"
+            if mov.enterprise_id_destination:
+                ent_id_str = str(mov.enterprise_id_destination.id)
+                stats["enterprises"].add(ent_id_str)
+                enterprise_movement_counts[ent_id_str]["count"] += 1
+                enterprise_movement_counts[ent_id_str]["type"] = str(mov.type_destination.value) if mov.type_destination else "UNKNOWN"
+    statistics = {
+        "species": {
+            sp: dict(labels) for sp, labels in stats["species"].items()
+        },
+        "farms": list(stats["farms"]),
+        "enterprises": list(stats["enterprises"])
+    }
+    farms_list = []
+    enterprises_list = []
+    if farm_movement_counts:
+        farm_ids = [ObjectId(fid) for fid in farm_movement_counts.keys()]
+        farmpolygons = FarmPolygons.objects(farm_id__in=farm_ids).only('farm_id', 'latitude', 'longitud')
+        farmpolygons_dict = {str(fp.farm_id.id): fp for fp in farmpolygons if fp.farm_id}
+        
+        farms = Farm.objects(id__in=farm_ids).only('id', 'ext_id')
+        farms_dict = {str(f.id): f for f in farms}
+        
+        for farm_id_str, mov_data in farm_movement_counts.items():
+            if farm_id_str in farmpolygons_dict:
+                fp = farmpolygons_dict[farm_id_str]
+                farm_obj = farms_dict.get(farm_id_str)
+                
+                ext_id_data = []
+                if farm_obj and farm_obj.ext_id:
+                    ext_id_data = [convert_object_ids(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
+                
+                destination = {
+                    "latitude": fp.latitude,
+                    "longitud": fp.longitud,
+                    "ext_id": ext_id_data,
+                    "farm_id": str(fp.farm_id.id) if fp.farm_id else None
+                }
+                
+                farms_list.append({
+                    "movements": mov_data["count"],
+                    "direction": direction,
+                    "destination_type": mov_data["type"],
+                    "destination": destination
+                })
+    if enterprise_movement_counts:
+        ent_ids = [ObjectId(eid) for eid in enterprise_movement_counts.keys()]
+        enterprises = Enterprise.objects(id__in=ent_ids)
+        enterprises_dict = {str(ent.id): ent for ent in enterprises}
+        for ent_id_str, mov_data in enterprise_movement_counts.items():
+            if ent_id_str in enterprises_dict:
+                ent = enterprises_dict[ent_id_str]
+                enterprises_list.append({
+                    "movements": mov_data["count"],
+                    "direction": direction,
+                    "destination_type": mov_data["type"],
+                    "destination": convert_object_ids(ent.to_mongo().to_dict())
+                })
+    return {
+        "farms": farms_list,
+        "enterprises": enterprises_list,
+        "statistics": statistics,
+        "movements_by_type": dict(movements_by_type),
+        "total_movements": total_movements
+    }
+
+
+def calculate_statistics_python_pure_for_enterprise(enterprise_id, start_date, end_date):
+    """Calcula estadísticas para una enterprise usando Python puro"""
+    movements_in = Movement.objects(
+        enterprise_id_destination=enterprise_id,
+        date__gte=start_date,
+        date__lte=end_date
+    )
+    movements_out = Movement.objects(
+        enterprise_id_origin=enterprise_id,
+        date__gte=start_date,
+        date__lte=end_date
+    )
+    inputs = process_movements_python_for_enterprise(movements_in, "in", enterprise_id)
+    outputs = process_movements_python_for_enterprise(movements_out, "out", enterprise_id)
+    
+    summary = calculate_summary(inputs, outputs)
+    
+    mixed = calculate_mixed_python(
+        inputs.get("statistics", {}),
+        outputs.get("statistics", {})
+    )
+    return {
+        "summary": summary,
+        "inputs": inputs,
+        "outputs": outputs,
+        "mixed": mixed
+    }
+
+
 def calculate_mixed_python(inputs_stats, outputs_stats):
     input_farms = set(inputs_stats.get("farms", []))
     output_farms = set(outputs_stats.get("farms", []))
@@ -429,132 +571,28 @@ def get_movement_statistics_python_pure(
 
 @_inner_router.get("/statistics-by-enterpriseid")
 def get_movement_statistics_by_enterpriseid(
-    ids: str = Query(..., description="One enterprise_id to filter movements records"),
+    ids: str = Query(..., description="One or more enterprise_ids separated by commas to filter movement records"),
+    start_date: str = Query(..., description="Fecha inicio (ISO format: YYYY-MM-DD)"),
+    end_date: str = Query(..., description="Fecha fin (ISO format: YYYY-MM-DD)")
 ):
     t0 = time.perf_counter()
-    terms = parse_object_ids(ids)
+    try:
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+        if end < start:
+            raise HTTPException(status_code=400, detail="end_date must be greater than or equal to start_date")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format. Use YYYY-MM-DD. Error: {str(e)}")
+    
+    enterprise_ids = [ObjectId(i) for i in parse_object_ids(ids)]
     t1 = time.perf_counter()
-    enterprise_id = ObjectId(terms[0])
-    pipeline = [
-        {
-            "$match": {
-                "$or": [
-                    {"enterprise_id_origin": enterprise_id},
-                    {"enterprise_id_destination": enterprise_id}
-                ]
-            }
-        },
-        {
-            "$facet": {
-                "farms_out": [
-                    {"$match": {"enterprise_id_origin": enterprise_id, "type_destination": "FARM"}},
-                    {"$group": {"_id": "$farm_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
-                    {"$lookup": {"from": "farm", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                    {"$unwind": "$destination_info"},
-                    {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                ],
-                "farms_in": [
-                    {"$match": {"enterprise_id_destination": enterprise_id, "type_origin": "FARM"}},
-                    {"$group": {"_id": "$farm_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
-                    {"$lookup": {"from": "farm", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                    {"$unwind": "$destination_info"},
-                    {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                ],
-                "enterprises_out": [
-                    {"$match": {"enterprise_id_origin": enterprise_id, "type_destination": {"$ne": "FARM"}}},
-                    {"$group": {"_id": "$enterprise_id_destination", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_destination"}}},
-                    {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                    {"$unwind": "$destination_info"},
-                    {"$project": {"_id": 0, "direction": "out", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                ],
-                "enterprises_in": [
-                    {"$match": {"enterprise_id_destination": enterprise_id, "type_origin": {"$ne": "FARM"}}},
-                    {"$group": {"_id": "$enterprise_id_origin", "movements": {"$sum": 1}, "type_destination": {"$first": "$type_origin"}}},
-                    {"$lookup": {"from": "enterprise", "localField": "_id", "foreignField": "_id", "as": "destination_info"}},
-                    {"$unwind": "$destination_info"},
-                    {"$project": {"_id": 0, "direction": "in", "destination_type": "$type_destination", "movements": 1, "destination": "$destination_info"}}
-                ],
-                "statistic_out": [
-                    {"$match": {"enterprise_id_origin": enterprise_id}},
-                    {"$unwind": "$movement"},
-                    {"$group": {
-                        "_id": {
-                            "year": {"$year": "$date"},
-                            "species": "$species",
-                            "label": "$movement.label"
-                        },
-                        "headcount": {"$sum": "$movement.amount"},
-                        "movements": {"$sum": 1}
-                    }},
-                    {"$group": {
-                        "_id": {"year": "$_id.year", "species": "$_id.species"},
-                        "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
-                    }},
-                    {"$group": {
-                        "_id": "$_id.year",
-                        "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
-                    }},
-                    {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
-                    {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
-                    {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
-                    {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
-                ],
-                "statistic_in": [
-                    {"$match": {"enterprise_id_destination": enterprise_id}},
-                    {"$unwind": "$movement"},
-                    {"$group": {
-                        "_id": {
-                            "year": {"$year": "$date"},
-                            "species": "$species",
-                            "label": "$movement.label"
-                        },
-                        "headcount": {"$sum": "$movement.amount"},
-                        "movements": {"$sum": 1}
-                    }},
-                    {"$group": {
-                        "_id": {"year": "$_id.year", "species": "$_id.species"},
-                        "labels": {"$push": {"k": "$_id.label", "v": {"headcount": "$headcount", "movements": "$movements"}}}
-                    }},
-                    {"$group": {
-                        "_id": "$_id.year",
-                        "species": {"$push": {"k": "$_id.species", "v": {"$arrayToObject": "$labels"}}}
-                    }},
-                    {"$project": {"k": {"$toString": "$_id"}, "v": {"$arrayToObject": "$species"}}},
-                    {"$replaceRoot": {"newRoot": {"k": "$k", "v": "$v"}}},
-                    {"$group": {"_id": None, "statistics": {"$push": {"k": "$k", "v": "$v"}}}},
-                    {"$project": {"_id": 0, "statistics": {"$arrayToObject": "$statistics"}}}
-                ]
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "inputs": {
-                    "farms": "$farms_in",
-                    "enterprises": "$enterprises_in",
-                    "statistics": {"$arrayElemAt": ["$statistic_in.statistics", 0]}
-                },
-                "outputs": {
-                    "farms": "$farms_out",
-                    "enterprises": "$enterprises_out",
-                    "statistics": {"$arrayElemAt": ["$statistic_out.statistics", 0]}
-                }
-            }
-        }
-    ]
+    results_by_enterprise = {}
+    for enterprise_id in enterprise_ids:
+        result = calculate_statistics_python_pure_for_enterprise(enterprise_id, start, end)
+        results_by_enterprise[str(enterprise_id)] = result
     t2 = time.perf_counter()
-    matches = list(Movement.objects.aggregate(pipeline))
-    t3 = time.perf_counter()
-    result = convert_object_ids(matches[0] if matches else {"inputs": {}, "outputs": {}})
-    t4 = time.perf_counter()
-    logger.info(
-        f"Parse={((t1 - t0) * 1000):.2f}ms | "
-        f"BuildQuery={((t2 - t1) * 1000):.2f}ms | "
-        f"QueryExec={((t3 - t2) * 1000):.2f}ms | "
-        f"Serialize={((t4 - t3) * 1000):.2f}ms | "
-        f"Total={((t4 - t0) * 1000):.2f}ms"
-    )
-    return result
+    logger.info(f"[PYTHON PURE] Query for {len(enterprise_ids)} enterprise_ids executed in {(t2 - t1)*1000:.2f}ms (date range: {start_date} to {end_date})")
+    return results_by_enterprise
 
 
 def convert_object_ids(obj):
