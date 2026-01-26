@@ -607,7 +607,7 @@ def convert_object_ids(obj):
 
 
 router = APIRouter(
-    #dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_admin)]
 )
 
 router.include_router(_inner_router)
