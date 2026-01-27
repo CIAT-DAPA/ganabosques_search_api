@@ -27,6 +27,8 @@ pipeline {
             steps {
                 script {
                     sshCommand remote: remote, command: '''
+                        set -e
+
                         echo "Matando proceso en puerto 5001..."
                         fuser -k 5001/tcp || true
 
@@ -36,21 +38,19 @@ pipeline {
                         echo "Haciendo pull del código..."
                         git pull origin main
 
-                        echo "Instalando dependencias en entorno conda..."
-
-                        cd /opt/ganabosques/api/ganabosques_search_api
-
-                        python3 -m venv env
-
+                        echo "Creando/activando entorno virtual..."
+                        if [ ! -d "env" ]; then
+                          python3 -m venv env
+                        fi
                         source env/bin/activate
 
+                        echo "Instalando dependencias..."
                         cd src
-                        
-                        pip install -r src/requirements.txt
+                        python -m pip install --upgrade pip
+                        pip install -r requirements.txt
 
                         echo "Levantando servicio con uvicorn..."
-                        
-                        nohup main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
+                        nohup uvicorn main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
                     '''
                 }
             }
