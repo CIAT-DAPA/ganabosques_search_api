@@ -28,6 +28,7 @@ from routes.adm3risk_by_analysis_and_adm3 import router as adm3risk_by_analysis_
 from routes.adm3risk_get_all import router as adm3risk_get_all
 from routes.enterprise_risk import router as enterprise_risk_router
 from routes.farmrisk_paginated import router as farmrisk_paginated
+from routes.adm3Front import router as adm3Front
 from routes.enum import router as enum
 from tools.logger import logger
 
@@ -97,4 +98,5 @@ app.include_router(adm3risk_by_analysis_and_adm3)
 app.include_router(adm3risk_get_all)
 app.include_router(enterprise_risk_router)
 app.include_router(farmrisk_paginated)
+app.include_router(adm3Front)
 # uvicorn main:app --reload
