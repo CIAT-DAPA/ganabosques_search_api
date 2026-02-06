@@ -7,7 +7,9 @@ from datetime import datetime
 from ganabosques_orm.collections.analysis import Analysis
 from routes.base_route import generate_read_only_router
 from dependencies.auth_guard import require_admin
+from ganabosques_orm.enums.valuechain import ValueChain
 
+print(ValueChain)
 
 class AnalysisSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the analysis")
@@ -123,9 +125,22 @@ _inner_router = generate_read_only_router(
 
 
 @_inner_router.get("/", response_model=List[AnalysisSchema])
-def get_all():
-    items = Analysis.objects.select_related()
+def get_all(
+    value_chain: Optional[ValueChain] = Query(
+        None,
+        description="Filter analyses by value chain (livestock | cacao)"
+    )
+):
+    query = Analysis.objects
+
+    if value_chain:
+        query = query.filter(value_chain=value_chain.value)
+
+    query = query.select_related()
+
+    items = list(query)
     items_sorted = sorted(items, key=_safe_period_end, reverse=True)
+
     return [serialize_analysis(i) for i in items_sorted]
 
 
