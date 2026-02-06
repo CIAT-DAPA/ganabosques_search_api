@@ -137,20 +137,7 @@ def get_enterprise_by_adm2_ids(
 #     (NO TOCADO)
 
 
-@_inner_router.get("/by-name", response_model=List[EnterpriseSchema])
-def get_enterprise_by_name(
-    name: str = Query(..., description="Uno o más nombres de empresa (comma-separated) para búsqueda parcial case-insensitive")
-):
-    """Búsqueda parcial insensible a mayúsculas/minúsculas."""
-    terms = [t.strip() for t in name.split(",") if t.strip()]
-    if not terms:
-        raise HTTPException(status_code=400, detail="Debes proporcionar al menos un término en 'name'.")
 
-    ors = [{"name": {"$regex": re.escape(t), "$options": "i"}} for t in terms]
-    query = {"$or": ors}
-
-    matches = Enterprise.objects(__raw__=query)
-    return [serialize_enterprise(e) for e in matches]
 
 
 router = APIRouter(
