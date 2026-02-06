@@ -33,7 +33,7 @@ MAX_IDS = 500
 FARMRISK_IN_BATCH = 8000  # <- batch para farm_id $in (ajústalo si necesitas)
 
 EntityType = Literal["adm3", "farm", "enterprise"]
-DefType = Literal["annual", "cumulative", "warning", "quarter"]
+DefType = Literal["annual", "cumulative", "atd", "nad"]
 
 
 class GlobalRequest(BaseModel):
@@ -41,7 +41,7 @@ class GlobalRequest(BaseModel):
     ids: List[str] = Field(..., description="Lista de ObjectIds (depende de entity_type)")
 
     # Modo histórico (como antes)
-    type: Optional[DefType] = Field(default=None, description="annual|cumulative|warning|quarter")
+    type: Optional[DefType] = Field(default=None, description="annual|cumulative|atd|nad")
 
     # Modos “rápidos”
     analysis_ids: Optional[List[str]] = Field(default=None, description="Lista de analysis_id (si viene, ignora type)")
@@ -336,6 +336,7 @@ def _build_adm3_sit_codes_for_analysis(
 
 @router.post("/risk/by-ids-and-type")
 def get_risk_by_ids_and_type(payload: GlobalRequest):
+    print(">>> PAYLOAD QUE LLEGÓ AL ENDPOINT:", payload.dict())
     """
     Un solo endpoint:
       - entity_type=adm3: igual que /adm3risk/by-adm3-and-type

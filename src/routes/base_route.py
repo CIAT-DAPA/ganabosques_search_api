@@ -5,7 +5,7 @@ from bson import ObjectId
 from tools.pagination import build_paginated_response, PaginatedResponse
 from tools.utils import parse_object_ids, build_search_query
 import re
-
+from ganabosques_orm.enums.valuechain import ValueChain
 MAX_TERMS = 5
 MAX_TERM_LENGTH = 25
 MAX_COMBINATIONS = 50
@@ -49,11 +49,16 @@ def generate_read_only_router(
     if include_endpoints and "by-name" in include_endpoints:
         @router.get("/by-name", response_model=List[schema_model])
         def get_by_name(
-            name: str = Query(..., description="One or more comma-separated names for case-insensitive partial search. (each up to {MAX_TERM_LENGTH} characters)")
+            name: str = Query(..., description="One or more comma-separated names for case-insensitive partial search. (each up to {MAX_TERM_LENGTH} characters)"),
+            value_chain: Optional[ValueChain] = Query(None, description="Filter by value_chain. Options: livestock, enterprise")
         ):
             terms = [term.strip()[:MAX_TERM_LENGTH] for term in name.split(",") if term.strip()]
             query = build_search_query(terms, ["name"])
-            matches = collection.objects(__raw__=query)
+            additional_filters = {}
+            if value_chain is not None:
+                additional_filters["value_chain"] = value_chain.value
+
+            matches = collection.objects(__raw__=query, **additional_filters)
             return [serialize(m) for m in matches]
         get_by_name.__doc__ = f"Search {pretty_name} records by name with partial, case-insensitive match."
 
@@ -72,9 +77,13 @@ def generate_read_only_router(
                 @router.get("/by-extid", response_model=List[schema_model])
                 def get_by_extid(
                     ext_codes: Optional[str] = Query(None, description="Comma-separated ext_code values to filter by ext_id.ext_code"),
-                    labels: Optional[str] = Query(None, description=f"Comma-separated {label_field} values to filter by ext_id.{label_field}. Valid options: {valid_labels_str}")
+                    labels: Optional[str] = Query(None, description=f"Comma-separated {label_field} values to filter by ext_id.{label_field}. Valid options: {valid_labels_str}"),
+                    value_chain: Optional[ValueChain] = Query(
+                        None,
+                        description="Filter by value_chain. Options: livestock, enterprise"
+                    )
                 ):
-                    if not ext_codes and not labels:
+                    if not ext_codes and not labels and not value_chain:
                         raise HTTPException(
                             status_code=400,
                             detail=f"At least one of 'ext_codes' or '{label_field}s' must be provided."
@@ -102,9 +111,21 @@ def generate_read_only_router(
                     if enum_labels:
                         elem_match_query[label_field] = {"$in": enum_labels}
 
-                    query = {"ext_id": {"$elemMatch": elem_match_query}}
 
-                    matches = collection.objects(__raw__=query)
+                    # -------- NUEVO BLOQUE COMPLETO --------
+
+                    additional_filters = {}
+                    if value_chain is not None:
+                        additional_filters["value_chain"] = value_chain.value
+
+                    # 🔥 solo usar $elemMatch si realmente hay algo que buscar ahí
+                    if elem_match_query:
+                        query = {"ext_id": {"$elemMatch": elem_match_query}}
+                        matches = collection.objects(__raw__=query, **additional_filters)
+                    else:
+                        # caso donde SOLO filtran por value_chain
+                        matches = collection.objects(**additional_filters)
+
                     return [serialize(m) for m in matches]
                 get_by_extid.__doc__ = f"Search {pretty_name} records by ext_id.ext_code and/or ext_id.{label_field}."
 
