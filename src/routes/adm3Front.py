@@ -21,7 +21,7 @@ MAX_IDS = 500
 
 class RequestBody(BaseModel):
     adm3_ids: List[str] = Field(..., description="Lista de ObjectIds de ADM3")
-    type: Literal["annual", "cumulative", "warning", "quarter"]
+    type: Literal["annual", "cumulative", "atd", "nad"]
 
 class Adm3PeriodItem(BaseModel):
     period_start: Optional[str] = None
