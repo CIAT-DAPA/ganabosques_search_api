@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from bson import ObjectId, DBRef
 
 from ganabosques_orm.collections.farm import Farm
@@ -36,17 +36,15 @@ class FarmInfo(BaseModel):
     adm3_id: Optional[str] = None
     adm3_name: Optional[str] = None
 
-    # ext_id tal cual (array de objects)
     ext_id: Optional[List[dict]] = None
 
     enable: Optional[bool] = None
     created: Optional[str] = None
     updated: Optional[str] = None
 
-    # desde FarmPolygons
     latitude: Optional[float] = None
     longitud: Optional[float] = None
-    geojson: Optional[dict] = None   # ✅ geojson tal cual
+    geojson: Optional[dict] = None
 
 
 class FarmRiskItem(BaseModel):
@@ -117,13 +115,6 @@ def get_farmrisk_by_analysis_id_page(
     page: int = Query(1, ge=1, description="Página (1=primeros 20, 2=21-40, etc.)"),
     page_size: int = Query(PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
 ):
-    """
-    Retorna FarmRisk para un analysis_id con paginación por página (skip/limit).
-    Adjunta:
-      - Farm (incluye ext_id completo)
-      - FarmPolygons latitude/longitude/geojson (buscado por farm_id)
-      - Adm3 name (buscado por adm3_id del Farm)
-    """
     try:
         analysis_oid = _as_object_id(analysis_id)
         if not analysis_oid:
@@ -131,31 +122,34 @@ def get_farmrisk_by_analysis_id_page(
 
         skip = (page - 1) * page_size
 
-        # 1) FarmRisk page
+        # 🔥 ORDEN GLOBAL REAL DESDE MONGO (ANTES DEL SKIP)
         coll_risk = FarmRisk._get_collection()
         risk_docs = list(
             coll_risk.find({"analysis_id": analysis_oid})
-                    .sort([("_id", 1)])   # orden estable
-                    .skip(skip)
-                    .limit(page_size)
+            .sort([
+                ("deforestation.ha", -1),
+                ("risk_input", -1),
+                ("risk_output", -1),
+                ("_id", 1),
+            ])
+            .skip(skip)
+            .limit(page_size)
         )
 
         if not risk_docs:
             return PageResponse(page=page, page_size=page_size, items=[])
 
-        # 2) Batch farms (por farm_id)
-        farm_oids: List[ObjectId] = []
-        for d in risk_docs:
-            fid = _as_object_id(d.get("farm_id"))
-            if fid:
-                farm_oids.append(fid)
-        farm_oids = list({x for x in farm_oids})
+        # ---------------- Farms ----------------
+        farm_oids = list({
+            _as_object_id(d.get("farm_id"))
+            for d in risk_docs
+            if _as_object_id(d.get("farm_id"))
+        })
 
         farms = list(Farm.objects(id__in=farm_oids).no_dereference())
 
-        # 3) farm_map base + recolectar adm3_ids
         farm_map: Dict[str, FarmInfo] = {}
-        adm3_oids: List[ObjectId] = []
+        adm3_oids = []
 
         for f in farms:
             fm = f.to_mongo().to_dict()
@@ -169,19 +163,13 @@ def get_farmrisk_by_analysis_id_page(
             farm_map[str(fm["_id"])] = FarmInfo(
                 farm_id=str(fm["_id"]),
                 adm3_id=str(adm3_oid) if adm3_oid else None,
-                adm3_name=None,
-                ext_id=fm.get("ext_id") or None,  # ✅ tal cual
+                ext_id=fm.get("ext_id") or None,
                 enable=bool(log.get("enable")) if "enable" in log else None,
                 created=_iso(fm.get("created")),
                 updated=_iso(fm.get("updated")),
-                latitude=None,
-                longitud=None,
-                geojson=None,
             )
 
-        adm3_oids = list({x for x in adm3_oids})
-
-        # 4) Batch FarmPolygons por farm_id -> latitude/longitude/geojson (tal cual)
+        # ---------------- FarmPolygons ----------------
         if farm_oids:
             coll_poly = FarmPolygons._get_collection()
             poly_docs = list(
@@ -191,12 +179,11 @@ def get_farmrisk_by_analysis_id_page(
                         "farm_id": 1,
                         "latitude": 1,
                         "longitud": 1,
-                        "geojson": 1,   # ✅ agregar geojson
+                        "geojson": 1,
                     }
                 )
             )
 
-            # Si hay varios polygons por farm, toma el primero
             seen = set()
             for p in poly_docs:
                 fid = _as_object_id(p.get("farm_id"))
@@ -210,36 +197,33 @@ def get_farmrisk_by_analysis_id_page(
                 if fid_str in farm_map:
                     farm_map[fid_str].latitude = p.get("latitude")
                     farm_map[fid_str].longitud = p.get("longitud")
-                    farm_map[fid_str].geojson = p.get("geojson")  # ✅ tal cual
+                    farm_map[fid_str].geojson = p.get("geojson")
 
-        # 5) Batch Adm3 name por adm3_id
+        # ---------------- Adm3 ----------------
         if adm3_oids:
             adm3_docs = list(
                 Adm3.objects(id__in=adm3_oids)
                 .no_dereference()
                 .only("id", "name")
             )
-            adm3_name_map = {str(a.id): (getattr(a, "name", None) or None) for a in adm3_docs}
+            adm3_name_map = {str(a.id): a.name for a in adm3_docs}
 
             for finfo in farm_map.values():
-                if finfo.adm3_id and finfo.adm3_id in adm3_name_map:
+                if finfo.adm3_id in adm3_name_map:
                     finfo.adm3_name = adm3_name_map[finfo.adm3_id]
 
-        # 6) Response
-        items: List[FarmRiskItem] = []
+        # ---------------- Response ----------------
+        items = []
         for d in risk_docs:
             farm_id_oid = _as_object_id(d.get("farm_id"))
-            farm_id_str = str(farm_id_oid) if farm_id_oid else str(d.get("farm_id"))
-
-            farm_polygons_id = d.get("farm_polygons_id")
-            farm_polygons_id = str(_as_object_id(farm_polygons_id)) if farm_polygons_id else None
+            farm_id_str = str(farm_id_oid)
 
             items.append(
                 FarmRiskItem(
                     _id=str(d.get("_id")),
                     analysis_id=str(analysis_oid),
                     farm_id=farm_id_str,
-                    farm_polygons_id=farm_polygons_id,
+                    farm_polygons_id=str(_as_object_id(d.get("farm_polygons_id"))) if d.get("farm_polygons_id") else None,
                     risk_direct=bool(d.get("risk_direct")),
                     risk_input=bool(d.get("risk_input")),
                     risk_output=bool(d.get("risk_output")),
