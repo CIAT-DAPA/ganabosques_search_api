@@ -89,6 +89,9 @@ def user_has_permissions(
     """
     Verifica si un usuario tiene los permisos requeridos.
     
+    IMPORTANTE: Cuando se requieren AMBOS actions y options, valida que exista 
+    AL MENOS UN ROL que contenga las actions Y options requeridas juntas.
+    
     Args:
         user_identifier: ext_id o id de MongoDB
         required_actions: Lista de acciones requeridas (puede ser strings o enums)
@@ -118,41 +121,70 @@ def user_has_permissions(
     if not roles:
         return False
     
-    # Consolidar todas las acciones y opciones de todos los roles
-    user_actions = set()
-    user_options = set()
-    
-    for role in roles:
-        user_actions.update(role.get("actions", []))
-        user_options.update(role.get("options", []))
-    
-    # Convertir enums a strings para comparación
+    # Convertir enums a strings
+    required_actions_str = None
     if required_actions:
         required_actions_str = [
             action.value if isinstance(action, Actions) else action 
             for action in required_actions
         ]
-        
-        if require_all_actions:
-            if not all(action in user_actions for action in required_actions_str):
-                return False
-        else:
-            if not any(action in user_actions for action in required_actions_str):
-                return False
     
+    required_options_str = None
     if required_options:
         required_options_str = [
             option.value if isinstance(option, Options) else option 
             for option in required_options
         ]
+    
+    # CASO 1: Se requieren AMBOS actions y options
+    # Debe existir AL MENOS UN rol que tenga ambos juntos
+    if required_actions_str and required_options_str:
+        for role in roles:
+            role_actions = set(role.get("actions", []))
+            role_options = set(role.get("options", []))
+            
+            # Verificar si este rol cumple con las actions requeridas
+            if require_all_actions:
+                has_actions = all(action in role_actions for action in required_actions_str)
+            else:
+                has_actions = any(action in role_actions for action in required_actions_str)
+            
+            # Verificar si este rol cumple con las options requeridas
+            if require_all_options:
+                has_options = all(option in role_options for option in required_options_str)
+            else:
+                has_options = any(option in role_options for option in required_options_str)
+            
+            # Si este rol tiene ambos, el usuario tiene permiso
+            if has_actions and has_options:
+                return True
+        
+        # Ningún rol tiene ambos juntos
+        return False
+    
+    # CASO 2: Solo se requieren actions (sin options)
+    elif required_actions_str:
+        user_actions = set()
+        for role in roles:
+            user_actions.update(role.get("actions", []))
+        
+        if require_all_actions:
+            return all(action in user_actions for action in required_actions_str)
+        else:
+            return any(action in user_actions for action in required_actions_str)
+    
+    # CASO 3: Solo se requieren options (sin actions)
+    elif required_options_str:
+        user_options = set()
+        for role in roles:
+            user_options.update(role.get("options", []))
         
         if require_all_options:
-            if not all(option in user_options for option in required_options_str):
-                return False
+            return all(option in user_options for option in required_options_str)
         else:
-            if not any(option in user_options for option in required_options_str):
-                return False
+            return any(option in user_options for option in required_options_str)
     
+    # CASO 4: No se requiere nada (solo valida que tenga token válido)
     return True
 
 
