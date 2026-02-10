@@ -20,6 +20,7 @@ from routes.farmingareas import router as farmingareas
 from routes.analysis import router as analysis
 from routes.adm3risk import router as adm3risk
 from routes.farmrisk import router as farmrisk
+from routes.farmriskverification import router as farmriskverification
 #from routes.enterpriserisk import router as enterpriserisk
 from routes.movement import router as movement
 from routes.analisys_risk_router import router as get_farmrisk_by_analyses
@@ -85,6 +86,7 @@ app.include_router(farmingareas)
 app.include_router(analysis)
 app.include_router(adm3risk)
 app.include_router(farmrisk)
+app.include_router(farmriskverification)
 #app.include_router(enterpriserisk)
 
 # Movements

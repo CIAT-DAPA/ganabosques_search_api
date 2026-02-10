@@ -6,6 +6,7 @@ from bson import ObjectId
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from ganabosques_orm.collections.farm import Farm
 from ganabosques_orm.collections.adm3 import Adm3
+from ganabosques_orm.collections.farmriskverification import FarmRiskVerification
 
 from dependencies.auth_guard import require_admin  
 
@@ -84,13 +85,39 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
         adm3_docs = Adm3.objects(id__in=list(adm3_ids))
         adm3_by_id: Dict[ObjectId, Adm3] = {a.id: a for a in adm3_docs}
 
+        # ============================
+        # 3) Resolver verificaciones en bloque
+        # ============================
+        farmrisk_ids = [fr.id for fr in farmrisks]
+        
+        # Consultar todas las verificaciones para estos farmrisks
+        verifications = FarmRiskVerification.objects(farmrisk__in=farmrisk_ids).order_by('-verification')
+        
+        # Construir diccionario con la verificación más reciente por farmrisk
+        verification_by_farmrisk: Dict[ObjectId, Dict[str, Any]] = {}
+        for verif in verifications:
+            farmrisk_ref = getattr(verif, "farmrisk", None)
+            if farmrisk_ref is None:
+                continue
+            
+            farmrisk_id = farmrisk_ref.id if hasattr(farmrisk_ref, "id") else farmrisk_ref
+            
+            # Solo guardar la primera (más reciente) por cada farmrisk
+            if farmrisk_id not in verification_by_farmrisk:
+                verification_by_farmrisk[farmrisk_id] = {
+                    "user_id": str(verif.user_id.id) if verif.user_id else None,
+                    "verification_date": verif.verification.isoformat() if verif.verification else None,
+                    "observation": verif.observation,
+                    "status": verif.status if verif.status is not None else False
+                }
+
         # Estructura agrupada por analysis_id (como ya tenías)
         grouped_results: Dict[str, List[Dict[str, Any]]] = {
             str(a_id): [] for a_id in valid_analysis_ids
         }
 
         # ============================
-        # 3) Construir respuesta final
+        # 4) Construir respuesta final
         # ============================
         for fr in farmrisks:
             doc = fr.to_mongo().to_dict()
@@ -155,6 +182,10 @@ def get_farmrisk_filtered(data: FarmRiskFilterRequest):
             doc["department"] = department
             doc["municipality"] = municipality
             doc["vereda"] = vereda
+
+            # Añadir verificación si existe
+            farmrisk_id_for_verif = fr.id
+            doc["verification"] = verification_by_farmrisk.get(farmrisk_id_for_verif, {})
 
             # Agregar al grupo correspondiente
             if analysis_id_str is not None and analysis_id_str in grouped_results:
