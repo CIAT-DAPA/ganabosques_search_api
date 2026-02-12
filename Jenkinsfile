@@ -9,6 +9,7 @@ pipeline {
     }
 
     stages {
+
         stage('Connection to AWS server') {
             steps {
                 script {
@@ -39,11 +40,14 @@ pipeline {
                         git pull origin main
         
                         echo "Eliminando entorno virtual anterior..."
-                        rm -rf env
+                        rm -rf env || true
         
                         echo "Creando entorno virtual limpio..."
                         python3 -m venv env
                         source env/bin/activate
+        
+                        echo "Actualizando pip..."
+                        python -m pip install --upgrade pip
         
                         echo "Instalando dependencias..."
                         cd src
@@ -51,22 +55,21 @@ pipeline {
         
                         echo "Levantando servicio con uvicorn..."
                         nohup uvicorn main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
+        
+                        echo "Deploy finalizado correctamente."
                     '''
                 }
             }
         }
+    }
 
     post {
         failure {
-            script {
-                echo 'fail :c'
-            }
+            echo '❌ Deploy failed'
         }
 
         success {
-            script {
-                echo 'everything went very well!!'
-            }
+            echo '✅ Everything went very well!!'
         }
     }
 }
