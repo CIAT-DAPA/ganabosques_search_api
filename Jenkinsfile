@@ -39,7 +39,7 @@ pipeline {
                         git pull origin main
         
                         echo "Eliminando entorno virtual anterior..."
-                        rm -rf env || true
+                        rm -rf env
         
                         echo "Creando entorno virtual limpio..."
                         python3 -m venv env
@@ -47,7 +47,6 @@ pipeline {
         
                         echo "Instalando dependencias..."
                         cd src
-                        python -m pip install --upgrade pip
                         pip install -r requirements.txt
         
                         echo "Levantando servicio con uvicorn..."
