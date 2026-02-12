@@ -93,7 +93,7 @@ def generate_read_only_router(
                     enum_labels = []
 
                     if ext_codes:
-                        ext_code_list = [re.escape(code.strip()) for code in ext_codes.split(",") if code.strip()]
+                        ext_code_list = [code.strip() for code in ext_codes.split(",") if code.strip()]
 
                     if labels:
                         raw_labels = [l.strip() for l in labels.split(",") if l.strip()]
@@ -103,7 +103,7 @@ def generate_read_only_router(
                                 status_code=400,
                                 detail=f"Invalid {label_field}(s): {', '.join(invalid_labels)}. Valid options: {valid_labels_str}"
                             )
-                        enum_labels = [re.escape(label_enum[l].value) for l in raw_labels]
+                        enum_labels = [label_enum[l].value for l in raw_labels]
 
                     elem_match_query = {}
                     if ext_code_list:
@@ -112,7 +112,6 @@ def generate_read_only_router(
                         elem_match_query[label_field] = {"$in": enum_labels}
 
 
-                    # -------- NUEVO BLOQUE COMPLETO --------
 
                     additional_filters = {}
                     if value_chain is not None:
@@ -135,7 +134,9 @@ def generate_read_only_router(
                     ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
                 ):
                     terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
+                    print("Search terms for ext_id:", terms)
                     query = build_search_query(terms, ["ext_id"])
+                    print("Query for ext_id search:", query)
                     matches = collection.objects(__raw__=query)
                     return [serialize(m) for m in matches]
                 get_by_extid.__doc__ = f"Search {pretty_name} records by ext_id."
