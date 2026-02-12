@@ -86,7 +86,7 @@ def create_farmrisk_verification(
         if not user:
             raise HTTPException(status_code=404, detail=f"User not found: {user_mongo_id}")
         
-        userverrification = UserVerifier.objects(id=ObjectId(user_mongo_id)).first()
+        userverrification = UserVerifier.objects(user_id=ObjectId(user_mongo_id)).first()
 
         if not userverrification:
             raise HTTPException(status_code=403, detail=f"User not have verification rights: {user_mongo_id}")
