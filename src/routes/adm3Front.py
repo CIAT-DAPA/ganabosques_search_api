@@ -9,6 +9,7 @@ from ganabosques_orm.collections.adm3 import Adm3
 from ganabosques_orm.collections.adm3risk import Adm3Risk
 from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
+from ganabosques_orm.enums.valuechain import ValueChain
 
 from dependencies.auth_guard import require_admin 
 
@@ -22,6 +23,7 @@ MAX_IDS = 500
 class RequestBody(BaseModel):
     adm3_ids: List[str] = Field(..., description="Lista de ObjectIds de ADM3")
     type: Literal["annual", "cumulative", "atd", "nad"]
+    value_chain: Optional[str] = Field(None, description="Cadena de valor: cacao o livestock")
 
 class Adm3PeriodItem(BaseModel):
     period_start: Optional[str] = None
@@ -109,11 +111,24 @@ def get_adm3risk_by_adm3_and_type(payload: RequestBody):
         if not defo_periods:
             return Adm3RiskGroupedResponse(root=grouped)
 
+        analysis_query = Analysis.objects(deforestation_id__in=list(defo_periods.keys()))
+
+        if payload.value_chain:
+            try:
+                vc = ValueChain(payload.value_chain)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"value_chain inválido: {payload.value_chain}. Opciones: cacao, livestock",
+                )
+            analysis_query = analysis_query.filter(value_chain=vc.value)
+
         analyses = list(
-            Analysis.objects(deforestation_id__in=list(defo_periods.keys()))
+            analysis_query
             .no_dereference()
-            .only("id", "deforestation_id")
+            .only("id", "deforestation_id", "value_chain")
         )
+    
         analysis_to_defo: Dict[str, str] = {}
         for a in analyses:
             did = _as_object_id(getattr(a, "deforestation_id", None))
