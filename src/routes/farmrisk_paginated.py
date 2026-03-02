@@ -204,9 +204,11 @@ def get_farmrisk_by_analysis_id_page(
             adm3_docs = list(
                 Adm3.objects(id__in=adm3_oids)
                 .no_dereference()
-                .only("id", "name")
+                .only("id", "label")  # <-- antes: "name"
             )
-            adm3_name_map = {str(a.id): a.name for a in adm3_docs}
+
+            # <-- antes: a.name
+            adm3_name_map = {str(a.id): getattr(a, "label", None) for a in adm3_docs}
 
             for finfo in farm_map.values():
                 if finfo.adm3_id in adm3_name_map:
