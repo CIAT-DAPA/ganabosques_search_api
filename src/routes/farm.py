@@ -1,14 +1,16 @@
 import re
+import time
 from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from bson import ObjectId
 from ganabosques_orm.collections.farm import Farm
 from tools.pagination import build_paginated_response, PaginatedResponse
 from schemas.logschema import LogSchema
+from schemas.extid_schema import ExtIdFarmSchema
 
 from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
+from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
 
 from datetime import datetime
 from ganabosques_orm.enums.source import Source
@@ -17,21 +19,18 @@ from ganabosques_orm.enums.farmsource import FarmSource
 from dependencies.auth_guard import require_admin  
 
 
-class ExtIdFarmSchema(BaseModel):
-    source: Source = Field(..., description="Source system of the external ID")
-    ext_code: str = Field(..., description="External code from the source")
-
-
 class FarmSchema(BaseModel):
+    """Optimized read-only schema for Farm collection."""
     id: str = Field(..., description="Internal MongoDB ID of the farm")
-    adm3_id: str = Field(None, description="ID of the associated Adm3 document")
-    ext_id: List[ExtIdFarmSchema] = Field(..., description="List of external identifiers")
+    adm3_id: str = Field(..., description="ID of the associated Adm3 document")
+    ext_id: List[ExtIdFarmSchema] = Field(default_factory=list, description="List of external identifiers")
     farm_source: FarmSource = Field(..., description="Source from which the farm was registered")
     log: Optional[LogSchema] = Field(None, description="Logging information")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "id": "665f1726b1ac3457e3a91a01",
                 "adm3_id": "664f1111b1ac3457e3a90000",
@@ -49,38 +48,49 @@ class FarmSchema(BaseModel):
                 }
             }
         }
+    )
 
 
-def serialize_farm(doc):
-    """Serialize a Farm document into a JSON-compatible dictionary."""
-    return {
-        "id": str(doc.id),
-        "adm3_id": str(doc.adm3_id.id) if doc.adm3_id else None,
-        "ext_id": [
-            {
-                "source": str(ext.source.value),
-                "ext_code": ext.ext_code
-            } for ext in (doc.ext_id or [])
-        ],
-        "farm_source": str(doc.farm_source.value) if doc.farm_source else None,
-        "log": {
-            "enable": doc.log.enable if doc.log else None,
-            "created": doc.log.created.isoformat() if doc.log and doc.log.created else None,
-            "updated": doc.log.updated.isoformat() if doc.log and doc.log.updated else None
-        } if doc.log else None
-    }
-
-
-# Router interno generado (sin auth)
+# Router interno generado (sin auth) - Pydantic optimizado sin serialize_fn
 _inner_router = generate_read_only_router(
     prefix="/farm",
     tags=["Farm and Enterprise"],
     collection=Farm,
     schema_model=FarmSchema,
     allowed_fields=["farm_source"],
-    serialize_fn=serialize_farm,
-    include_endpoints=["paged", "by-extid"]
+    serialize_fn=None,  # Pydantic lo hace automáticamente
+    include_endpoints=["paged", "by-extid"],
+    include_get_all=False  # Desactivar el endpoint automático para usar uno optimizado
 )
+
+
+@_inner_router.get("/", response_model=List[FarmSchema])
+def get_all_farms_optimized():
+    """
+    Retrieve all Farm records.
+    WARNING: This endpoint returns all farms. Use /paged/ endpoint for better performance.
+    """
+    try:
+        inicio_query = time.perf_counter()
+        docs = list(Farm.objects().as_pymongo())
+        fin_query = time.perf_counter()
+        
+        inicio_serialization = time.perf_counter()
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin_serialization = time.perf_counter()
+        
+        query_time = fin_query - inicio_query
+        serialization_time = fin_serialization - inicio_serialization
+        
+        print(f"[Farm GET /] Query time: {query_time:.3f}s | Serialization time: {serialization_time:.3f}s | Total: {(query_time + serialization_time):.3f}s | Records: {len(items)}")
+        
+        return items
+    except Exception as e:
+        print(f"[Farm GET /] ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving all farms: {str(e)}"
+        )
 
 
 @_inner_router.get("/by-adm3", response_model=List[FarmSchema])
@@ -89,11 +99,28 @@ def get_farm_by_adm3_ids(
 ):
     """
     Retrieve Farm records that belong to one or more Adm3 IDs.
+    Optimized with as_pymongo() for better performance.
     Example: /by-adm3?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
     """
-    search_ids = parse_object_ids(ids)
-    matches = Farm.objects(adm3_id__in=search_ids)
-    return [serialize_farm(adm) for adm in matches]
+    try:
+        search_ids = parse_object_ids(ids)
+        
+        inicio = time.perf_counter()
+        docs = list(Farm.objects(adm3_id__in=search_ids).as_pymongo())
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin = time.perf_counter()
+        
+        print(f"[Farm /by-adm3] Time: {(fin - inicio):.3f}s | Records: {len(items)}")
+        
+        return items
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Farm /by-adm3] ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving farms by adm3: {str(e)}"
+        )
 
 
 # Lista de opciones válidas del enum Source

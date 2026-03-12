@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Type, List, Optional, Callable, Any, Dict
 from pydantic import BaseModel
 from bson import ObjectId
@@ -9,9 +9,12 @@ from enum import Enum
 from typing import List
 import re
 
+from dependencies.auth_guard import require_admin
+
 router = APIRouter(
     prefix="/enums",
-    tags=["Enums"]
+    tags=["Enums"],
+    dependencies=[Depends(require_admin)]
 )
 
 @router.get("/", response_model=List[str], summary="Get enumeration values", response_description="A list of enumeration values")
