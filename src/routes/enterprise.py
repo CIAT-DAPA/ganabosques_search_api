@@ -1,12 +1,14 @@
 import re
+import time
 from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from bson import ObjectId
 from ganabosques_orm.collections.enterprise import Enterprise
 from tools.pagination import build_paginated_response, PaginatedResponse
 from schemas.logschema import LogSchema
-import math
+from schemas.extid_schema import ExtIdEnterpriseSchema
+from tools.utils import convert_doc_to_json, parse_object_ids
 
 from routes.base_route import generate_read_only_router
 
@@ -14,27 +16,24 @@ from datetime import datetime
 from ganabosques_orm.enums.typeenterprise import TypeEnterprise
 from ganabosques_orm.enums.label import Label
 
-from dependencies.auth_guard import require_admin  
-
-
-class ExtIdEnterpriseSchema(BaseModel):
-    label: Label = Field(..., description="Label type for the external ID")
-    ext_code: str = Field(..., description="External code associated with the label")
+from dependencies.auth_guard import require_admin
 
 
 class EnterpriseSchema(BaseModel):
+    """Optimized read-only schema for Enterprise collection."""
     id: str = Field(..., description="Internal MongoDB ID of the enterprise")
     adm2_id: Optional[str] = Field(None, description="ID of the associated Adm2 document")
     name: Optional[str] = Field(None, description="Name of the enterprise")
-    ext_id: List[ExtIdEnterpriseSchema] = Field(..., description="List of external identifiers")
+    ext_id: List[ExtIdEnterpriseSchema] = Field(default_factory=list, description="List of external identifiers")
     type_enterprise: TypeEnterprise = Field(..., description="Type of the enterprise (e.g., SLAUGHTERHOUSE, COLLECTION_CENTER)")
     latitude: Optional[float] = Field(None, description="Latitude of the enterprise location")
     longitud: Optional[float] = Field(None, description="Longitude of the enterprise location")
     log: Optional[LogSchema] = Field(None, description="Logging metadata")
-
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "id": "665f1726b1ac3457e3a91a02",
                 "adm2_id": "664f2222b1ac3457e3a90001",
@@ -55,48 +54,17 @@ class EnterpriseSchema(BaseModel):
                 }
             }
         }
+    )
 
 
-def safe_float(value):
-    """Devuelve None si el valor no es un float válido para JSON."""
-    if value is None:
-        return None
-    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-        return None
-    return value
-
-
-def serialize_enterprise(doc):
-    """Serialize an Enterprise document into a JSON-compatible dictionary."""
-    return {
-        "id": str(doc.id),
-        "adm2_id": str(doc.adm2_id.id) if doc.adm2_id else None,
-        "name": doc.name,
-        "ext_id": [
-            {
-                "label": ext.label.value if ext.label else None,
-                "ext_code": ext.ext_code
-            } for ext in (doc.ext_id or [])
-        ],
-        "type_enterprise": doc.type_enterprise.value if doc.type_enterprise else None,
-        "latitude": safe_float(doc.latitude),
-        "longitud": safe_float(doc.longitud),
-        "log": {
-            "enable": doc.log.enable if doc.log else None,
-            "created": doc.log.created.isoformat() if doc.log and doc.log.created else None,
-            "updated": doc.log.updated.isoformat() if doc.log and doc.log.updated else None
-        } if doc.log else None
-    }
-
-
-# Router interno (NO TOCADO)
+# Router interno generado (sin auth) - Pydantic optimizado sin serialize_fn
 _inner_router = generate_read_only_router(
     prefix="/enterprise",
     tags=["Farm and Enterprise"],
     collection=Enterprise,
     schema_model=EnterpriseSchema,
     allowed_fields=["name", "type_enterprise"],
-    serialize_fn=serialize_enterprise,
+    serialize_fn=None,  # Pydantic lo hace automáticamente
     include_endpoints=["paged", "by-name", "by-extid"]
 )
 
@@ -107,17 +75,28 @@ def get_enterprise_by_adm2_ids(
 ):
     """
     Retrieve Enterprise records that belong to one or more Adm2 IDs.
+    Optimized with as_pymongo() for better performance.
     Example: /by-adm2?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
     """
-    search_ids = [id.strip() for id in ids.split(",") if id.strip()]
-    invalid_ids = [i for i in search_ids if not ObjectId.is_valid(i)]
-    if invalid_ids:
+    try:
+        search_ids = parse_object_ids(ids)
+        
+        inicio = time.perf_counter()
+        docs = list(Enterprise.objects(adm2_id__in=search_ids).as_pymongo())
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin = time.perf_counter()
+        
+        print(f"[Enterprise /by-adm2] Time: {(fin - inicio):.3f}s | Records: {len(items)}")
+        
+        return items
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Enterprise /by-adm2] ERROR: {str(e)}")
         raise HTTPException(
-            status_code=400,
-            detail=f"IDs no válidos: {', '.join(invalid_ids)}"
+            status_code=500,
+            detail=f"Error retrieving enterprises by adm2: {str(e)}"
         )
-    matches = Enterprise.objects(adm2_id__in=[ObjectId(i) for i in search_ids])
-    return [serialize_enterprise(enterprise) for enterprise in matches]
 
 
 # valid_labels_str = ", ".join([l.name for l in Label])

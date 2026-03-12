@@ -19,7 +19,7 @@ from tools.logger import logger
 from routes.base_route import generate_read_only_router
 from routes.enterprise import EnterpriseSchema
 from routes.farm import FarmSchema
-from tools.utils import parse_object_ids, build_search_query
+from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
 from dependencies.auth_guard import require_admin
 
 
@@ -186,7 +186,7 @@ def process_movements_python(movements, direction, farm_id):
                 
                 ext_id_data = []
                 if farm_obj and farm_obj.ext_id:
-                    ext_id_data = [convert_object_ids(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
+                    ext_id_data = [convert_doc_to_json(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
                 
                 destination = {
                     "latitude": fp.latitude,
@@ -212,7 +212,7 @@ def process_movements_python(movements, direction, farm_id):
                     "movements": mov_data["count"],
                     "direction": direction,
                     "destination_type": mov_data["type"],
-                    "destination": convert_object_ids(ent.to_mongo().to_dict())
+                    "destination": convert_doc_to_json(ent.to_mongo().to_dict())
                 })
     return {
         "farms": farms_list,
@@ -351,7 +351,7 @@ def process_movements_python_for_enterprise(movements, direction, enterprise_id)
                 
                 ext_id_data = []
                 if farm_obj and farm_obj.ext_id:
-                    ext_id_data = [convert_object_ids(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
+                    ext_id_data = [convert_doc_to_json(ext.to_mongo().to_dict()) for ext in farm_obj.ext_id]
                 
                 destination = {
                     "latitude": fp.latitude,
@@ -377,7 +377,7 @@ def process_movements_python_for_enterprise(movements, direction, enterprise_id)
                     "movements": mov_data["count"],
                     "direction": direction,
                     "destination_type": mov_data["type"],
-                    "destination": convert_object_ids(ent.to_mongo().to_dict())
+                    "destination": convert_doc_to_json(ent.to_mongo().to_dict())
                 })
     return {
         "farms": farms_list,
@@ -593,17 +593,6 @@ def get_movement_statistics_by_enterpriseid(
     t2 = time.perf_counter()
     logger.info(f"[PYTHON PURE] Query for {len(enterprise_ids)} enterprise_ids executed in {(t2 - t1)*1000:.2f}ms (date range: {start_date} to {end_date})")
     return results_by_enterprise
-
-
-def convert_object_ids(obj):
-    if isinstance(obj, dict):
-        return {k: convert_object_ids(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_object_ids(item) for item in obj]
-    elif isinstance(obj, ObjectId):
-        return str(obj)
-    else:
-        return obj
 
 
 router = APIRouter(
