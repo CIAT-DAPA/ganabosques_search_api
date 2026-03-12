@@ -88,6 +88,7 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                 "risk_total": 1,
                 "def_ha": 1,
                 "farm_amount": 1,
+                "farm_total_amount": 1,
             },
         )
 
@@ -99,6 +100,7 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                 "risk_total": bool(doc.get("risk_total", False)),
                 "def_ha": float(doc.get("def_ha", 0.0)) if doc.get("def_ha") is not None else 0.0,
                 "farm_amount": int(doc.get("farm_amount", 0)) if doc.get("farm_amount") is not None else 0,
+                "farm_total_amount": int(doc.get("farm_total_amount", 0)) if doc.get("farm_total_amount") is not None else 0,
             }
 
         grouped_results: Dict[str, List[Dict[str, Any]]] = {str(a): [] for a in valid_analysis_ids}
@@ -128,6 +130,7 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                         "period_end": pe_iso,
                         "risk_total": vals["risk_total"],
                         "farm_amount": vals["farm_amount"],
+                        "farm_total_amount": vals["farm_total_amount"],
                         "def_ha": vals["def_ha"],
                     })
                 else:
@@ -138,6 +141,7 @@ def get_adm3risk_filtered(data: Adm3RiskFilterRequest):
                         "period_end": pe_iso,
                         "risk_total": False,
                         "farm_amount": 0,
+                        "farm_total_amount": 0,
                         "def_ha": 0.0,
                     })
 
