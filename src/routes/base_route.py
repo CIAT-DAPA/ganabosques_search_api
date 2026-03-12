@@ -3,8 +3,9 @@ from typing import Type, List, Optional, Callable, Any, Dict
 from pydantic import BaseModel
 from bson import ObjectId
 from tools.pagination import build_paginated_response, PaginatedResponse
-from tools.utils import parse_object_ids, build_search_query
+from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
 import re
+import time
 from ganabosques_orm.enums.valuechain import ValueChain
 MAX_TERMS = 5
 MAX_TERM_LENGTH = 25
@@ -26,24 +27,61 @@ def generate_read_only_router(
     pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', collection.__name__).title()
 
     def serialize(item):
-        return serialize_fn(item) if serialize_fn else schema_model(**item.to_mongo().to_dict())
+        """
+        Serialize a MongoEngine document to API response format.
+        
+        If serialize_fn is provided, uses custom serialization logic.
+        Otherwise, uses optimized conversion with ObjectId handling.
+        """
+        if serialize_fn:
+            return serialize_fn(item)
+        else:
+            # Optimizado: convertir a dict y manejar todos los ObjectIds/fechas/enums
+            data = item.to_mongo().to_dict()
+            return convert_doc_to_json(data)
     
     pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', collection.__name__).title()
 
     if include_get_all:
         @router.get("/", response_model=List[schema_model])
-        def get_all(): 
-            items = collection.objects()
-            return [serialize(i) for i in items]
+        def get_all():
+            inicio = time.perf_counter()
+            try:
+                items = collection.objects()
+                results = [serialize(i) for i in items]
+                fin = time.perf_counter()
+                print(f"[{pretty_name} GET /] Time: {(fin - inicio):.3f}s | Records: {len(results)}")
+                return results
+            except Exception as e:
+                fin = time.perf_counter()
+                print(f"[{pretty_name} GET /] ERROR after {(fin - inicio):.3f}s: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error retrieving {pretty_name} records: {str(e)}"
+                )
         get_all.__doc__ = f"Retrieve all {pretty_name} records."
 
     @router.get("/by-ids", response_model=List[schema_model])
     def get_by_ids(
         ids: str = Query(..., description="Comma-separated list of IDs. Example: ?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06")
     ):
-        search_ids = parse_object_ids(ids)
-        matches = collection.objects(id__in=search_ids)
-        return [serialize(m) for m in matches]
+        inicio = time.perf_counter()
+        try:
+            search_ids = parse_object_ids(ids)
+            matches = collection.objects(id__in=search_ids)
+            results = [serialize(m) for m in matches]
+            fin = time.perf_counter()
+            print(f"[{pretty_name} /by-ids] Time: {(fin - inicio):.3f}s | Records: {len(results)}")
+            return results
+        except HTTPException:
+            raise
+        except Exception as e:
+            fin = time.perf_counter()
+            print(f"[{pretty_name} /by-ids] ERROR after {(fin - inicio):.3f}s: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error retrieving {pretty_name} by IDs: {str(e)}"
+            )
     get_by_ids.__doc__ = f"Retrieve one or multiple {pretty_name} records by their MongoDB ObjectIds."
     
     if include_endpoints and "by-name" in include_endpoints:
@@ -52,6 +90,7 @@ def generate_read_only_router(
             name: str = Query(..., description="One or more comma-separated names for case-insensitive partial search. (each up to {MAX_TERM_LENGTH} characters)"),
             value_chain: Optional[ValueChain] = Query(None, description="Filter by value_chain. Options: livestock, enterprise")
         ):
+            inicio = time.perf_counter()
             terms = [term.strip()[:MAX_TERM_LENGTH] for term in name.split(",") if term.strip()]
             query = build_search_query(terms, ["name"])
             additional_filters = {}
@@ -59,7 +98,10 @@ def generate_read_only_router(
                 additional_filters["value_chain"] = value_chain.value
 
             matches = collection.objects(__raw__=query, **additional_filters)
-            return [serialize(m) for m in matches]
+            results = [serialize(m) for m in matches]
+            fin = time.perf_counter()
+            print(f"[{pretty_name} /by-name] Time: {(fin - inicio):.3f}s | Records: {len(results)}")
+            return results
         get_by_name.__doc__ = f"Search {pretty_name} records by name with partial, case-insensitive match."
 
     if include_endpoints and "by-extid" in include_endpoints:
@@ -117,6 +159,7 @@ def generate_read_only_router(
                     if value_chain is not None:
                         additional_filters["value_chain"] = value_chain.value
 
+                    inicio = time.perf_counter()
                     # 🔥 solo usar $elemMatch si realmente hay algo que buscar ahí
                     if elem_match_query:
                         query = {"ext_id": {"$elemMatch": elem_match_query}}
@@ -125,7 +168,10 @@ def generate_read_only_router(
                         # caso donde SOLO filtran por value_chain
                         matches = collection.objects(**additional_filters)
 
-                    return [serialize(m) for m in matches]
+                    results = [serialize(m) for m in matches]
+                    fin = time.perf_counter()
+                    print(f"[{pretty_name} /by-extid] Time: {(fin - inicio):.3f}s | Records: {len(results)}")
+                    return results
                 get_by_extid.__doc__ = f"Search {pretty_name} records by ext_id.ext_code and/or ext_id.{label_field}."
 
             else:
@@ -133,12 +179,14 @@ def generate_read_only_router(
                 def get_by_extid(
                     ext_ids: str = Query(..., description="One or more comma-separated ext_id for case-insensitive partial search")
                 ):
+                    inicio = time.perf_counter()
                     terms = [term.strip() for term in ext_ids.split(",") if term.strip()]
-                    print("Search terms for ext_id:", terms)
                     query = build_search_query(terms, ["ext_id"])
-                    print("Query for ext_id search:", query)
                     matches = collection.objects(__raw__=query)
-                    return [serialize(m) for m in matches]
+                    results = [serialize(m) for m in matches]
+                    fin = time.perf_counter()
+                    print(f"[{pretty_name} /by-extid] Time: {(fin - inicio):.3f}s | Records: {len(results)}")
+                    return results
                 get_by_extid.__doc__ = f"Search {pretty_name} records by ext_id."
 
     if include_endpoints and "paged" in include_endpoints:
