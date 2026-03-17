@@ -1,15 +1,12 @@
-import re
-import json
+import time
 from fastapi import Query, HTTPException, Depends, APIRouter
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
-from bson import ObjectId
+from typing import Optional, List
+from pydantic import BaseModel, Field, ConfigDict
 from ganabosques_orm.collections.farmpolygons import FarmPolygons
-from tools.pagination import build_paginated_response, PaginatedResponse
 from schemas.logschema import LogSchema
 
 from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
+from tools.utils import parse_object_ids, convert_doc_to_json
 
 from ganabosques_orm.enums.ugg import UGG
 from ganabosques_orm.enums.species import Species
@@ -33,9 +30,10 @@ class FarmPolygonsSchema(BaseModel):
     buffer_inputs: Optional[List[BufferPolygonSchema]] = Field(None, description="List of buffer polygon objects")
     log: Optional[LogSchema] = Field(None, description="Logging information")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "id": "665f1726b1ac3457e3a91a01",
                 "farm_id": "665f1234b1ac3457e3a90000",
@@ -58,30 +56,7 @@ class FarmPolygonsSchema(BaseModel):
                 }
             }
         }
-
-
-def serialize_farm_polygon(doc):
-    return {
-        "id": str(doc.id),
-        "farm_id": str(doc.farm_id.id) if doc.farm_id else None,
-        "geojson": doc.geojson,
-        "latitude": doc.latitude,
-        "longitud": doc.longitud,
-        "farm_ha": doc.farm_ha,
-        "radio": doc.radio,
-        "buffer_inputs": [
-            {
-                "ugg": buffer.ugg.value if buffer.ugg else None,
-                "amount": buffer.amount,
-                "species": buffer.species.value if buffer.species else None
-            } for buffer in (doc.buffer_inputs or [])
-        ],
-        "log": {
-            "enable": doc.log.enable if doc.log else None,
-            "created": doc.log.created.isoformat() if doc.log and doc.log.created else None,
-            "updated": doc.log.updated.isoformat() if doc.log and doc.log.updated else None
-        } if doc.log else None
-    }
+    )
 
 
 _inner_router = generate_read_only_router(
@@ -90,35 +65,64 @@ _inner_router = generate_read_only_router(
     collection=FarmPolygons,
     schema_model=FarmPolygonsSchema,
     allowed_fields=[],
-    serialize_fn=serialize_farm_polygon
+    serialize_fn=None,  # Pydantic + convert_doc_to_json
+    include_endpoints=["paged"],
+    include_get_all=False
 )
+
+
+@_inner_router.get("/", response_model=List[FarmPolygonsSchema])
+def get_all_farmpolygons_optimized():
+    """
+    Retrieve all FarmPolygons records.
+    WARNING: This endpoint returns all polygons. Use /paged/ endpoint for better performance.
+    """
+    try:
+        inicio_query = time.perf_counter()
+        docs = list(FarmPolygons.objects().as_pymongo())
+        fin_query = time.perf_counter()
+
+        inicio_serialization = time.perf_counter()
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin_serialization = time.perf_counter()
+
+        query_time = fin_query - inicio_query
+        serialization_time = fin_serialization - inicio_serialization
+
+        print(f"[FarmPolygons GET /] Query time: {query_time:.3f}s | Serialization time: {serialization_time:.3f}s | Total: {(query_time + serialization_time):.3f}s | Records: {len(items)}")
+
+        return items
+    except Exception as e:
+        print(f"[FarmPolygons GET /] ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving all farmpolygons: {str(e)}"
+        )
 
 
 @_inner_router.get("/by-farm", response_model=List[FarmPolygonsSchema])
 def get_farmpolygons_by_farm_ids(
     ids: str = Query(..., description="Comma-separated Farm IDs to filter FarmPolygonss records")
 ):
-    search_ids = parse_object_ids(ids)
-    matches = FarmPolygons.objects(farm_id__in=search_ids)
-    return [serialize_farm_polygon(poly) for poly in matches]
+    try:
+        search_ids = parse_object_ids(ids)
 
+        inicio = time.perf_counter()
+        docs = list(FarmPolygons.objects(farm_id__in=search_ids).as_pymongo())
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin = time.perf_counter()
 
-@_inner_router.get("/paged/", response_model=PaginatedResponse[FarmPolygonsSchema])
-def get_farmpolygon_paginated(
-    page: int = Query(1, ge=1, description="Page number to retrieve. Ignored if 'skip' is defined"),
-    limit: int = Query(10, ge=1, description="Maximum records per page"),
-    skip: Optional[int] = Query(None, ge=0, description="Number of records to skip. If defined, overrides 'page' parameter"),
-):
-    base_query = FarmPolygons.objects
+        print(f"[FarmPolygons /by-farm] Time: {(fin - inicio):.3f}s | Records: {len(items)}")
 
-    return build_paginated_response(
-        base_query=base_query,
-        schema_model=FarmPolygonsSchema,
-        page=page,
-        limit=limit,
-        skip=skip,
-        serialize_fn=serialize_farm_polygon
-    )
+        return items
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[FarmPolygons /by-farm] ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving farmpolygons by farm ids: {str(e)}"
+        )
 
 
 router = APIRouter(
