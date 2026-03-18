@@ -24,38 +24,32 @@ pipeline {
             }
         }
 
-        stage('Deploy FastAPI service') {
+        stage('Deploy Search API') {
             steps {
                 script {
                     sshCommand remote: remote, command: '''
                         set -e
-        
-                        echo "Matando proceso en puerto 5001..."
-                        fuser -k 5001/tcp || true
-        
-                        echo "Entrando a la carpeta de la API..."
-                        cd /opt/ganabosques/api/ganabosques_search_api
-        
+
+                        CONDA_ENV_PATH="/home/ganabosques/.miniforge3/envs/api/bin"
+                        APP_DIR="/opt/ganabosques/api/ganabosques_search_api"
+                        APP_PORT=5001
+
+                        echo "Matando proceso en puerto $APP_PORT..."
+                        fuser -k $APP_PORT/tcp || true
+
+                        echo "Entrando a la carpeta del proyecto..."
+                        cd $APP_DIR
+
                         echo "Haciendo pull del código..."
                         git pull origin main
-        
-                        echo "Eliminando entorno virtual anterior..."
-                        rm -rf env || true
-        
-                        echo "Creando entorno virtual limpio..."
-                        python3 -m venv env
-                        source env/bin/activate
-        
-                        echo "Actualizando pip..."
-                        python -m pip install --upgrade pip
-        
-                        echo "Instalando dependencias..."
+
+                        echo "Instalando dependencias con conda env admin..."
+                        $CONDA_ENV_PATH/pip install -r ./src/requirements.txt
+
+                        echo "Levantando servicio Uvicorn..."
                         cd src
-                        pip install -r requirements.txt
-        
-                        echo "Levantando servicio con uvicorn..."
-                        nohup uvicorn main:app --host 0.0.0.0 --port 5001 > api.log 2>&1 &
-        
+                        nohup $CONDA_ENV_PATH/uvicorn main:app --host 0.0.0.0 --port $APP_PORT > app.log 2>&1 &
+
                         echo "Deploy finalizado correctamente."
                     '''
                 }
