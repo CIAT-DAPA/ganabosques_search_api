@@ -1,9 +1,11 @@
-from typing import Optional
-from fastapi import Depends, APIRouter
+import time
+from typing import Optional, List
+from fastapi import Depends, APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from routes.base_route import generate_read_only_router
 from dependencies.auth_guard import require_admin
+from tools.utils import parse_object_ids, convert_doc_to_json
 
 
 class AttributeSchema(BaseModel):
@@ -90,6 +92,35 @@ _inner_router = generate_read_only_router(
     serialize_fn=serialize_farmrisk,
     include_endpoints=["paged"]
 )
+
+
+@_inner_router.get("/by-analysis", response_model=List[FarmRiskSchema])
+def get_farmrisk_by_analysis_ids(
+    ids: str = Query(..., description="Comma-separated Analysis IDs to filter FarmRisk records")
+):
+    """
+    Retrieve FarmRisk records that belong to one or more Analysis IDs.
+    Example: /by-analysis?ids=665f1726b1ac3457e3a91a05,665f1726b1ac3457e3a91a06
+    """
+    try:
+        search_ids = parse_object_ids(ids)
+
+        inicio = time.perf_counter()
+        docs = list(FarmRisk.objects(analysis_id__in=search_ids).as_pymongo())
+        items = [convert_doc_to_json(doc) for doc in docs]
+        fin = time.perf_counter()
+
+        print(f"[FarmRisk /by-analysis] Time: {(fin - inicio):.3f}s | Records: {len(items)}")
+
+        return items
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[FarmRisk /by-analysis] ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving farmrisk by analysis ids: {str(e)}"
+        )
 
 router = APIRouter(
     dependencies=[Depends(require_admin)]
