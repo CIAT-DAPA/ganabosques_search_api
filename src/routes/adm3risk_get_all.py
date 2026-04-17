@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Literal, Optional, Tuple, Any
 from bson import ObjectId, DBRef
 
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 # Collections
 from ganabosques_orm.collections.adm3 import Adm3

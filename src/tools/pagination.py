@@ -2,7 +2,7 @@ from typing import Type, List, Optional, Callable, Any, Dict, Generic, TypeVar
 from pydantic import BaseModel, Field
 from pydantic.generics import GenericModel
 import time
-from tools.utils import convert_doc_to_json
+from src.tools.utils import convert_doc_to_json
 
 T = TypeVar("T")
 
