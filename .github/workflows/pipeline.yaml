@@ -41,7 +41,8 @@ jobs:
     - name: Run Tests with pytest
       run: |
         source env/bin/activate
-        PYTHONPATH=$PYTHONPATH:./src pytest tests/
+        PYTHONPATH=$PYTHONPATH:.
+        python -m unittest discover tests
     # (Tests removidos por ahora)
 # ------- END API PROCCESS -------- #
 
