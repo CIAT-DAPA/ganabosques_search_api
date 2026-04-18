@@ -5,6 +5,13 @@
 
 ## Descripcion : 
 
+## Testing
+
+Run all unit tests using:
+
+```bash
+python -m unittest discover tests
+```
 
 
 ## Contributors

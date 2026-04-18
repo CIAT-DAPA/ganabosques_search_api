@@ -2,8 +2,8 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, List
-from auth.token_validation_router import validate_local_token
-from auth.utils import user_has_permissions
+from src.auth.token_validation_router import validate_local_token
+from src.auth.utils import user_has_permissions
 
 security = HTTPBearer()
 

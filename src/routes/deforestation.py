@@ -4,12 +4,12 @@ from fastapi import Query, HTTPException, Depends, APIRouter
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.deforestation import Deforestation
-from tools.pagination import build_paginated_response, PaginatedResponse
-from schemas.logschema import LogSchema
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.schemas.logschema import LogSchema
 
-from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import require_admin  
+from src.routes.base_route import generate_read_only_router
+from src.tools.utils import parse_object_ids, build_search_query
+from src.dependencies.auth_guard import require_admin  
 
 class DeforestationSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the deforestation record")

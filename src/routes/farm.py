@@ -5,18 +5,18 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from bson import ObjectId
 from ganabosques_orm.collections.farm import Farm
-from tools.pagination import build_paginated_response, PaginatedResponse
-from schemas.logschema import LogSchema
-from schemas.extid_schema import ExtIdFarmSchema
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.schemas.logschema import LogSchema
+from src.schemas.extid_schema import ExtIdFarmSchema
 
-from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
+from src.routes.base_route import generate_read_only_router
+from src.tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
 
 from datetime import datetime
 from ganabosques_orm.enums.source import Source
 from ganabosques_orm.enums.farmsource import FarmSource
 
-from dependencies.auth_guard import require_admin  
+from src.dependencies.auth_guard import require_admin  
 
 
 class FarmSchema(BaseModel):

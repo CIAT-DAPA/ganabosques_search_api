@@ -2,14 +2,14 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Type, List, Optional, Callable, Any, Dict
 from pydantic import BaseModel
 from bson import ObjectId
-from tools.pagination import build_paginated_response, PaginatedResponse
-from tools.utils import parse_object_ids, build_search_query
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.tools.utils import parse_object_ids, build_search_query
 from importlib import import_module
 from enum import Enum
 from typing import List
 import re
 
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 router = APIRouter(
     prefix="/enums",

@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from ganabosques_orm.collections.analysis import Analysis
-from routes.base_route import generate_read_only_router
-from dependencies.auth_guard import require_admin
+from src.routes.base_route import generate_read_only_router
+from src.dependencies.auth_guard import require_admin
 from ganabosques_orm.enums.valuechain import ValueChain
 
 print(ValueChain)

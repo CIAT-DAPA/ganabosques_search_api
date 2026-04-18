@@ -3,8 +3,8 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from ganabosques_orm.collections.adm3risk import Adm3Risk
 
-from routes.base_route import generate_read_only_router
-from dependencies.auth_guard import require_admin
+from src.routes.base_route import generate_read_only_router
+from src.dependencies.auth_guard import require_admin
 
 
 class Adm3RiskSchema(BaseModel):

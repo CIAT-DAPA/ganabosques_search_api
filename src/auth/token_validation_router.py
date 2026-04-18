@@ -5,7 +5,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from ganabosques_orm.collections.user import User
-from auth.utils import serialize_user_permissions
+from src.auth.utils import serialize_user_permissions
 
 load_dotenv()
 

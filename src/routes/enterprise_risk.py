@@ -16,7 +16,7 @@ from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.adm1 import Adm1
 from ganabosques_orm.collections.adm2 import Adm2
 
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 router = APIRouter(
     tags=["Enterprise Risk"],

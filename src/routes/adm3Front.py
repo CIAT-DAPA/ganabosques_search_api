@@ -11,7 +11,7 @@ from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.enums.valuechain import ValueChain
 
-from dependencies.auth_guard import require_admin 
+from src.dependencies.auth_guard import require_admin 
 
 router = APIRouter(
     tags=["Adm3 Risk"],

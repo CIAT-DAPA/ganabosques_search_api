@@ -2,8 +2,8 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Type, List, Optional, Callable, Any, Dict
 from pydantic import BaseModel
 from bson import ObjectId
-from tools.pagination import build_paginated_response, PaginatedResponse
-from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
 import re
 import time
 from ganabosques_orm.enums.valuechain import ValueChain

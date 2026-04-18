@@ -14,7 +14,7 @@ permissions:
 
 jobs:
 
-# ------- START ORM PROCCESS -------- #
+# ------- START API PROCCESS -------- #
 
   TestAPI:
 
@@ -35,8 +35,10 @@ jobs:
     - name: Install dependencies
       run: |
         pip install -r ./src/requirements.txt
+        python -m unittest discover tests
+
     # (Tests removidos por ahora)
-# ------- END ORM PROCCESS -------- #    
+# ------- END API PROCCESS -------- #
 
 # ------- START MERGE PROCCESS -------- #
 
