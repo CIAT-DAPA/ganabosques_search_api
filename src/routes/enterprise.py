@@ -5,18 +5,18 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from bson import ObjectId
 from ganabosques_orm.collections.enterprise import Enterprise
-from tools.pagination import build_paginated_response, PaginatedResponse
-from schemas.logschema import LogSchema
-from schemas.extid_schema import ExtIdEnterpriseSchema
-from tools.utils import convert_doc_to_json, parse_object_ids
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.schemas.logschema import LogSchema
+from src.schemas.extid_schema import ExtIdEnterpriseSchema
+from src.tools.utils import convert_doc_to_json, parse_object_ids
 
-from routes.base_route import generate_read_only_router
+from src.routes.base_route import generate_read_only_router
 
 from datetime import datetime
 from ganabosques_orm.enums.typeenterprise import TypeEnterprise
 from ganabosques_orm.enums.label import Label
 
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 
 class EnterpriseSchema(BaseModel):
