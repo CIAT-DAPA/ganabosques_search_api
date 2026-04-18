@@ -2,36 +2,36 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import ServerSelectionTimeoutError
-from database import init_db
+from src.database import init_db
 from dotenv import load_dotenv
-from auth.auth import router as auth_router
-from auth.get_client_token import router as get_client_token_router
-from auth.token_validation_router import router as validate_token_router
-from routes.adm1 import router as adm1
-from routes.adm2 import router as adm2
-from routes.adm3 import router as adm3
-from routes.farm import router as farm
-from routes.farmpolygons import router as farmpolygons
-from routes.enterprise import router as enterprise
-from routes.suppliers import router as suppliers
-from routes.deforestation import router as deforestation
-from routes.protectedareas import router as protectedareas
-from routes.farmingareas import router as farmingareas
-from routes.analysis import router as analysis
-from routes.adm3risk import router as adm3risk
-from routes.farmrisk import router as farmrisk
-from routes.farmriskverification import router as farmriskverification
-#from routes.enterpriserisk import router as enterpriserisk
-from routes.movement import router as movement
-from routes.analisys_risk_router import router as get_farmrisk_by_analyses
-from routes.get_analysis import router as get_analysis_router
-from routes.adm3risk_by_analysis_and_adm3 import router as adm3risk_by_analysis_and_adm3
-from routes.adm3risk_get_all import router as adm3risk_get_all
-from routes.enterprise_risk import router as enterprise_risk_router
-from routes.farmrisk_paginated import router as farmrisk_paginated
-from routes.adm3Front import router as adm3Front
-from routes.enum import router as enum
-from tools.logger import logger
+from src.auth.auth import router as auth_router
+from src.auth.get_client_token import router as get_client_token_router
+from src.auth.token_validation_router import router as validate_token_router
+from src.routes.adm1 import router as adm1
+from src.routes.adm2 import router as adm2
+from src.routes.adm3 import router as adm3
+from src.routes.farm import router as farm
+from src.routes.farmpolygons import router as farmpolygons
+from src.routes.enterprise import router as enterprise
+from src.routes.suppliers import router as suppliers
+from src.routes.deforestation import router as deforestation
+from src.routes.protectedareas import router as protectedareas
+from src.routes.farmingareas import router as farmingareas
+from src.routes.analysis import router as analysis
+from src.routes.adm3risk import router as adm3risk
+from src.routes.farmrisk import router as farmrisk
+from src.routes.farmriskverification import router as farmriskverification
+#from src.routes.enterpriserisk import router as enterpriserisk
+from src.routes.movement import router as movement
+from src.routes.analisys_risk_router import router as get_farmrisk_by_analyses
+from src.routes.get_analysis import router as get_analysis_router
+from src.routes.adm3risk_by_analysis_and_adm3 import router as adm3risk_by_analysis_and_adm3
+from src.routes.adm3risk_get_all import router as adm3risk_get_all
+from src.routes.enterprise_risk import router as enterprise_risk_router
+from src.routes.farmrisk_paginated import router as farmrisk_paginated
+from src.routes.adm3Front import router as adm3Front
+from src.routes.enum import router as enum
+from src.tools.logger import logger
 
 
 app = FastAPI(
