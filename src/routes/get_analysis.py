@@ -2,7 +2,7 @@ from fastapi import HTTPException, APIRouter, Depends
 from bson import ObjectId
 
 from ganabosques_orm.collections.analysis import Analysis
-from dependencies.auth_guard import require_admin 
+from src.dependencies.auth_guard import require_admin 
 
 router = APIRouter(
     tags=["Analysis"],

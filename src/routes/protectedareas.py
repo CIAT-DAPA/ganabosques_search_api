@@ -4,12 +4,12 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.protectedareas import ProtectedAreas
-from tools.pagination import build_paginated_response, PaginatedResponse
-from schemas.logschema import LogSchema
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.schemas.logschema import LogSchema
 
-from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import require_admin
+from src.routes.base_route import generate_read_only_router
+from src.tools.utils import parse_object_ids, build_search_query
+from src.dependencies.auth_guard import require_admin
 
 
 class ProtectedAreaSchema(BaseModel):
