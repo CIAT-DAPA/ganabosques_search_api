@@ -8,7 +8,7 @@ from ganabosques_orm.collections.farmriskverification import FarmRiskVerificatio
 from ganabosques_orm.collections.userverifier import UserVerifier
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from ganabosques_orm.collections.user import User
-from dependencies.auth_guard import require_token
+from src.dependencies.auth_guard import require_token
 
 router = APIRouter(
     prefix="/farmriskverification",

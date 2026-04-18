@@ -3,14 +3,14 @@ from fastapi import Query, HTTPException, Depends, APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from ganabosques_orm.collections.farmpolygons import FarmPolygons
-from schemas.logschema import LogSchema
+from src.schemas.logschema import LogSchema
 
-from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids, convert_doc_to_json
+from src.routes.base_route import generate_read_only_router
+from src.tools.utils import parse_object_ids, convert_doc_to_json
 
 from ganabosques_orm.enums.ugg import UGG
 from ganabosques_orm.enums.species import Species
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 
 class BufferPolygonSchema(BaseModel):
