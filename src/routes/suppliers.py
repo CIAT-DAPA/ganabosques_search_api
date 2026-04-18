@@ -6,11 +6,11 @@ from pydantic import BaseModel, Field
 
 from ganabosques_orm.collections.suppliers import Suppliers
 from ganabosques_orm.collections.farm import Farm  # ✅ NUEVO
-from schemas.logschema import LogSchema
+from src.schemas.logschema import LogSchema
 
-from routes.base_route import generate_read_only_router
-from tools.utils import parse_object_ids
-from dependencies.auth_guard import require_admin
+from src.routes.base_route import generate_read_only_router
+from src.tools.utils import parse_object_ids
+from src.dependencies.auth_guard import require_admin
 
 
 class SuppliersSchema(BaseModel):

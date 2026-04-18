@@ -4,9 +4,9 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from ganabosques_orm.collections.adm2 import Adm2
-from tools.pagination import build_paginated_response, PaginatedResponse
-from tools.utils import parse_object_ids, build_search_query
-from dependencies.auth_guard import  require_admin
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.tools.utils import parse_object_ids, build_search_query
+from src.dependencies.auth_guard import  require_admin
 
 router = APIRouter(
     prefix="/adm2",

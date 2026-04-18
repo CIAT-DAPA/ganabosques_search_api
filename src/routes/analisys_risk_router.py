@@ -8,7 +8,7 @@ from ganabosques_orm.collections.farmrisk import FarmRisk
 from ganabosques_orm.collections.farm import Farm
 from ganabosques_orm.collections.adm3 import Adm3
 from ganabosques_orm.collections.farmriskverification import FarmRiskVerification
-from dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_admin
 
 router = APIRouter(tags=["Farm Risk"], dependencies=[Depends(require_admin)])
 

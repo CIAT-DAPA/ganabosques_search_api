@@ -3,9 +3,9 @@ from typing import Optional, List
 from fastapi import Depends, APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 from ganabosques_orm.collections.farmrisk import FarmRisk
-from routes.base_route import generate_read_only_router
-from dependencies.auth_guard import require_admin
-from tools.utils import parse_object_ids, convert_doc_to_json
+from src.routes.base_route import generate_read_only_router
+from src.dependencies.auth_guard import require_admin
+from src.tools.utils import parse_object_ids, convert_doc_to_json
 
 
 class AttributeSchema(BaseModel):

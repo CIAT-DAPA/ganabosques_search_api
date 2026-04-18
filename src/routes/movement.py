@@ -13,14 +13,14 @@ from ganabosques_orm.enums.typemovement import TypeMovement
 from mongoengine.queryset.visitor import Q
 import time
 from collections import defaultdict
-from tools.pagination import build_paginated_response, PaginatedResponse
-from tools.logger import logger
+from src.tools.pagination import build_paginated_response, PaginatedResponse
+from src.tools.logger import logger
 
-from routes.base_route import generate_read_only_router
-from routes.enterprise import EnterpriseSchema
-from routes.farm import FarmSchema
-from tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
-from dependencies.auth_guard import require_admin
+from src.routes.base_route import generate_read_only_router
+from src.routes.enterprise import EnterpriseSchema
+from src.routes.farm import FarmSchema
+from src.tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
+from src.dependencies.auth_guard import require_admin
 
 
 class ClassificationSchema(BaseModel):
