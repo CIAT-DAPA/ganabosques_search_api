@@ -28,7 +28,7 @@ class TestFarmRisk(unittest.TestCase):
 
         result = _serialize_attr(attr)
 
-        self.assertEqual(result, {"prop": 0.2, "ha": 1.4, "distance": 30.5})
+        self.assertEqual(result, {"prop": 0.2, "ha": 1.4})
 
     def test_serialize_farmrisk_returns_expected_structure(self):
         doc = SimpleNamespace(
@@ -36,10 +36,10 @@ class TestFarmRisk(unittest.TestCase):
             farm_id=SimpleNamespace(id="farm-1"),
             analysis_id=SimpleNamespace(id="analysis-1"),
             farm_polygons_id=SimpleNamespace(id="polygon-1"),
-            deforestation=SimpleNamespace(prop=0.1, ha=2.0, distance=5.0),
-            protected=SimpleNamespace(prop=0.2, ha=1.0, distance=0.0),
-            farming_in=SimpleNamespace(prop=0.3, ha=3.0, distance=10.0),
-            farming_out=SimpleNamespace(prop=0.4, ha=4.0, distance=15.0),
+            deforestation=SimpleNamespace(prop=0.1, ha=2.0),
+            protected=SimpleNamespace(prop=0.2, ha=1.0),
+            farming_in=SimpleNamespace(prop=0.3, ha=3.0),
+            farming_out=SimpleNamespace(prop=0.4, ha=4.0),
             risk_direct=True,
             risk_input=False,
             risk_output=True,
@@ -54,10 +54,10 @@ class TestFarmRisk(unittest.TestCase):
                 "farm_id": "farm-1",
                 "analysis_id": "analysis-1",
                 "farm_polygons_id": "polygon-1",
-                "deforestation": {"prop": 0.1, "ha": 2.0, "distance": 5.0},
-                "protected": {"prop": 0.2, "ha": 1.0, "distance": 0.0},
-                "farming_in": {"prop": 0.3, "ha": 3.0, "distance": 10.0},
-                "farming_out": {"prop": 0.4, "ha": 4.0, "distance": 15.0},
+                "deforestation": {"prop": 0.1, "ha": 2.0},
+                "protected": {"prop": 0.2, "ha": 1.0},
+                "farming_in": {"prop": 0.3, "ha": 3.0},
+                "farming_out": {"prop": 0.4, "ha": 4.0},
                 "risk_direct": True,
                 "risk_input": False,
                 "risk_output": True,

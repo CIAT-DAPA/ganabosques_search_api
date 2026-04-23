@@ -127,6 +127,20 @@ def _extract_sit_codes_from_farm_ext_id(ext_id: Any) -> List[str]:
             code = obj.get("ext_code")
             if code is not None:
                 codes.append(str(code))
+                break 
+
+        elif obj.get("source") == "PRODUCER_ID":
+            code = obj.get("ext_code")
+            if code is not None:
+                codes.append(str(code))
+                break
+
+        elif obj.get("source") == "GEOFARMER_ID":
+            code = obj.get("ext_code")
+            if code is not None:
+                codes.append(str(code))
+                break
+
     return codes
 
 

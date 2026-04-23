@@ -11,7 +11,6 @@ from src.tools.utils import parse_object_ids, convert_doc_to_json
 class AttributeSchema(BaseModel):
     prop: Optional[float] = Field(None, description="Proportion")
     ha: Optional[float] = Field(None, description="Area in hectares")
-    distance: Optional[float] = Field(None, description="Distance to feature")
 
 
 class FarmRiskSchema(BaseModel):
@@ -37,10 +36,10 @@ class FarmRiskSchema(BaseModel):
                 "farm_id": "689a803713d2089e5c8b1e2e",
                 "analysis_id": "689d1149a6ef4a011d5c394e",
                 "farm_polygons_id": "689a803713d2089e5c8b1e2f",
-                "deforestation": { "prop": 0, "ha": 0, "distance": 0 },
-                "protected": { "prop": 1, "ha": 4.675431693, "distance": 0 },
-                "farming_in": { "prop": 0.32, "ha": 1.234, "distance": 12 },
-                "farming_out": { "prop": 0.05, "ha": 0.421, "distance": 3 },
+                "deforestation": { "prop": 0, "ha": 0 },
+                "protected": { "prop": 1, "ha": 4.675431693 },
+                "farming_in": { "prop": 0.32, "ha": 1.234 },
+                "farming_out": { "prop": 0.05, "ha": 0.421 },
                 "risk_direct": True,
                 "risk_input": False,
                 "risk_output": False
@@ -60,7 +59,6 @@ def _serialize_attr(attr) -> Optional[dict]:
     return {
         "prop": getattr(attr, "prop", None),
         "ha": getattr(attr, "ha", None),
-        "distance": getattr(attr, "distance", None),
     }
 
 

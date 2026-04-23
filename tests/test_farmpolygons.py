@@ -89,7 +89,7 @@ class TestFarmPolygons(unittest.TestCase):
 
         self.assertEqual(result, [{"id": "1"}, {"id": "2"}])
         mock_parse_object_ids.assert_called_once_with("farm-1,farm-2")
-        mock_farmpolygons.objects.assert_called_once_with(farm_id__in=["farm-1", "farm-2"])
+        mock_farmpolygons.objects.assert_called_once_with(farm_id__in=["farm-1", "farm-2"], log__enable=True)
 
     @patch("src.routes.farmpolygons.parse_object_ids")
     def test_get_farmpolygons_by_farm_ids_re_raises_http_exception(self, mock_parse_object_ids):

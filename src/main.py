@@ -101,4 +101,4 @@ app.include_router(adm3risk_get_all)
 app.include_router(enterprise_risk_router)
 app.include_router(farmrisk_paginated)
 app.include_router(adm3Front)
-# uvicorn main:app --reload
+# uvicorn src.main:app --reload
