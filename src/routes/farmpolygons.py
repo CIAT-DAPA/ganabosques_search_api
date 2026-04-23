@@ -108,7 +108,7 @@ def get_farmpolygons_by_farm_ids(
         search_ids = parse_object_ids(ids)
 
         inicio = time.perf_counter()
-        docs = list(FarmPolygons.objects(farm_id__in=search_ids).as_pymongo())
+        docs = list(FarmPolygons.objects(farm_id__in=search_ids, log__enable=True).as_pymongo())
         items = [convert_doc_to_json(doc) for doc in docs]
         fin = time.perf_counter()
 

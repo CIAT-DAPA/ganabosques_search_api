@@ -47,8 +47,7 @@ pipeline {
                         $CONDA_ENV_PATH/pip install -r ./src/requirements.txt
 
                         echo "Levantando servicio Uvicorn..."
-                        cd src
-                        nohup $CONDA_ENV_PATH/uvicorn main:app --host 0.0.0.0 --port $APP_PORT > app.log 2>&1 &
+                        nohup $CONDA_ENV_PATH/uvicorn src.main:app --host 0.0.0.0 --port $APP_PORT > app.log 2>&1 &
 
                         echo "Deploy finalizado correctamente."
                     '''
