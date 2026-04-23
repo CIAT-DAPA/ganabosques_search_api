@@ -112,7 +112,7 @@ class TestAdm3RiskGetAll(unittest.TestCase):
 
         result = _extract_sit_codes_from_farm_ext_id(ext_id)
 
-        self.assertEqual(result, ["ABC", "123"])
+        self.assertEqual(result, ["ABC"])
 
     def test_uniq_returns_unique_values_preserving_order(self):
         self.assertEqual(_uniq(["A", "B", "A", "C", "B"]), ["A", "B", "C"])
