@@ -112,11 +112,18 @@ def _area(obj) -> Optional[RiskAreaItem]:
 @router.get("/farmrisk/by-analysis-id", response_model=PageResponse)
 def get_farmrisk_by_analysis_id_page(
     analysis_id: str = Query(..., description="ObjectId del Analysis"),
+    farm_ids: Optional[str] = Query(None, description="Comma-separated Farm IDs to filter FarmRisk records"),
     page: int = Query(1, ge=1, description="Página (1=primeros 20, 2=21-40, etc.)"),
     page_size: int = Query(PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
 ):
     try:
         analysis_oid = _as_object_id(analysis_id)
+        farm_id_oids = (
+            [_as_object_id(fid) for fid in farm_ids.split(",") if _as_object_id(fid)]
+            if isinstance(farm_ids, str) and farm_ids
+            else None
+        )
+
         if not analysis_oid:
             raise HTTPException(status_code=400, detail=f"Invalid ObjectId: {analysis_id}")
 
@@ -125,7 +132,7 @@ def get_farmrisk_by_analysis_id_page(
         # 🔥 ORDEN GLOBAL REAL DESDE MONGO (ANTES DEL SKIP)
         coll_risk = FarmRisk._get_collection()
         risk_docs = list(
-            coll_risk.find({"analysis_id": analysis_oid})
+            coll_risk.find({"analysis_id": analysis_oid , **({"farm_id": {"$in": farm_id_oids}} if farm_id_oids else {})}) 
             .sort([
                 ("deforestation.ha", -1),
                 ("risk_input", -1),
