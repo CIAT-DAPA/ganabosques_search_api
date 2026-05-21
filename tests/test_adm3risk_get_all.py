@@ -462,7 +462,7 @@ class TestAdm3RiskGetAll(unittest.TestCase):
         self.assertEqual(len(result[str(enterprise_id)]["items"]), 1)
         self.assertEqual(
             result[str(enterprise_id)]["items"][0]["sit_codes"],
-            {"input": ["SC1"], "output": ["SC1"]},
+            {"input": {str(farm_id): [{'source': 'SIT_CODE', 'ext_code': 'SC1'}]}, "output": {str(farm_id): [{'source': 'SIT_CODE', 'ext_code': 'SC1'}]}},
         )
 
     def test_get_risk_by_ids_and_type_raises_http_exception_for_invalid_entity_type(self):

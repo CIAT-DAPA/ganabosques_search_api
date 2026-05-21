@@ -281,7 +281,7 @@ def _build_adm3_sit_codes_for_analysis(
     analysis_oid: ObjectId,
     farm_ids_for_adm3s: List[ObjectId],
     farm_to_adm3: Dict[str, str],
-    farm_to_sit: Dict[str, List[str]],
+    farm_to_sit,
 ) -> Dict[str, Dict[str, List[str]]]:
     """
     Retorna:
@@ -296,9 +296,9 @@ def _build_adm3_sit_codes_for_analysis(
     """
 
     # acumuladores por adm3
-    acc_direct: Dict[str, List[str]] = {}
-    acc_input: Dict[str, List[str]] = {}
-    acc_output: Dict[str, List[str]] = {}
+    acc_direct: Dict[str, Dict[str, List[str]]] = {}
+    acc_input: Dict[str, Dict[str, List[str]]] = {}
+    acc_output: Dict[str, Dict[str, List[str]]] = {}
 
     coll_fr = FarmRisk._get_collection()
 
@@ -326,20 +326,20 @@ def _build_adm3_sit_codes_for_analysis(
                 continue
 
             if r.get("risk_direct"):
-                acc_direct.setdefault(adm3_id, []).extend(sit_codes)
+                acc_direct.setdefault(adm3_id, {}).setdefault(fid_s, []).extend(sit_codes)
             if r.get("risk_input"):
-                acc_input.setdefault(adm3_id, []).extend(sit_codes)
+                acc_input.setdefault(adm3_id, {}).setdefault(fid_s, []).extend(sit_codes)
             if r.get("risk_output"):
-                acc_output.setdefault(adm3_id, []).extend(sit_codes)
+                acc_output.setdefault(adm3_id, {}).setdefault(fid_s, []).extend(sit_codes)
 
     # unique final
     out: Dict[str, Dict[str, List[str]]] = {}
     all_adm3 = set(list(acc_direct.keys()) + list(acc_input.keys()) + list(acc_output.keys()))
     for adm3_id in all_adm3:
         out[adm3_id] = {
-            "direct": _uniq(acc_direct.get(adm3_id, [])),
-            "input": _uniq(acc_input.get(adm3_id, [])),
-            "output": _uniq(acc_output.get(adm3_id, [])),
+            "direct": acc_direct.get(adm3_id, {}),
+            "input": acc_input.get(adm3_id, {}),
+            "output": acc_output.get(adm3_id, {}),
         }
     return out
 
@@ -350,7 +350,6 @@ def _build_adm3_sit_codes_for_analysis(
 
 @router.post("/risk/by-ids-and-type")
 def get_risk_by_ids_and_type(payload: GlobalRequest):
-    print(">>> PAYLOAD QUE LLEGÓ AL ENDPOINT:", payload.dict())
     """
     Un solo endpoint:
       - entity_type=adm3: igual que /adm3risk/by-adm3-and-type
@@ -418,7 +417,7 @@ def get_risk_by_ids_and_type(payload: GlobalRequest):
                 fid_s = str(fid)
                 farm_ids_for_adm3s.append(fid)
                 farm_to_adm3[fid_s] = str(adm3_oid)
-                farm_to_sit[fid_s] = _extract_sit_codes_from_farm_ext_id(fm.get("ext_id"))
+                farm_to_sit[fid_s] = fm.get("ext_id")
 
             # 3) Por cada analysis, calcular sit_codes filtrando FarmRisk por farm_id IN esas farms
             #    (esto evita el query gigante FarmRisk.find({analysis_id}))
@@ -442,9 +441,9 @@ def get_risk_by_ids_and_type(payload: GlobalRequest):
                     doc = existing_map.get((adm3_id, analysis_id))
 
                     sit_codes_for_adm3 = analysis_sit_cache.get(analysis_id, {}).get(adm3_id, {
-                        "direct": [],
-                        "input": [],
-                        "output": [],
+                        "direct": {},
+                        "input": {},
+                        "output": {},
                     })
 
                     grouped[adm3_id]["items"].append({
@@ -667,8 +666,7 @@ def get_risk_by_ids_and_type(payload: GlobalRequest):
                 for f in farm_docs2:
                     fm = f.to_mongo().to_dict()
                     fid = str(fm.get("_id"))
-                    farm_sit_map[fid] = _extract_sit_codes_from_farm_ext_id(fm.get("ext_id"))
-
+                    farm_sit_map[fid] = fm.get("ext_id")
             for enterprise_oid in valid_ids:
                 enterprise_id = str(enterprise_oid)
                 for analysis_id, defo_id in analysis_to_defo.items():
@@ -678,17 +676,17 @@ def get_risk_by_ids_and_type(payload: GlobalRequest):
                     risk_in_raw = doc.get("risk_input") if doc else None
                     risk_out_raw = doc.get("risk_output") if doc else None
 
-                    in_codes: List[str] = []
+                    in_codes = {}
                     for frid in _to_oid_list(risk_in_raw):
                         farm_oid = fr_to_farm.get(str(frid))
                         if farm_oid:
-                            in_codes += farm_sit_map.get(str(farm_oid), [])
+                            in_codes[str(farm_oid)] = farm_sit_map.get(str(farm_oid), [])
 
-                    out_codes: List[str] = []
+                    out_codes = {}
                     for frid in _to_oid_list(risk_out_raw):
                         farm_oid = fr_to_farm.get(str(frid))
                         if farm_oid:
-                            out_codes += farm_sit_map.get(str(farm_oid), [])
+                            out_codes[str(farm_oid)] = farm_sit_map.get(str(farm_oid), [])
 
                     grouped[enterprise_id]["items"].append({
                         "period_start": ps_iso,
@@ -700,7 +698,7 @@ def get_risk_by_ids_and_type(payload: GlobalRequest):
                         "risk_output": [str(_as_object_id(x) or x) for x in (risk_out_raw or [])] if isinstance(risk_out_raw, list) else (
                             [str(_as_object_id(risk_out_raw) or risk_out_raw)] if risk_out_raw else None
                         ),
-                        "sit_codes": {"input": _uniq(in_codes), "output": _uniq(out_codes)},
+                        "sit_codes": {"input": in_codes, "output": out_codes},
                     })
 
                 grouped[enterprise_id]["items"] = list(reversed(grouped[enterprise_id]["items"]))
