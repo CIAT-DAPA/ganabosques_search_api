@@ -67,8 +67,6 @@ def _as_object_id(val):
 
 
 def _validate_object_ids(ids: List[str]) -> List[ObjectId]:
-    if len(ids) > MAX_IDS:
-        raise HTTPException(status_code=400, detail=f"Too many ids (max {MAX_IDS})")
     out: List[ObjectId] = []
     for raw in ids:
         oid = _as_object_id(raw)
