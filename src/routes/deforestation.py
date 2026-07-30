@@ -9,7 +9,7 @@ from src.schemas.logschema import LogSchema
 
 from src.routes.base_route import generate_read_only_router
 from src.tools.utils import parse_object_ids, build_search_query
-from src.dependencies.auth_guard import require_admin  
+from src.dependencies.auth_guard import require_token  
 
 class DeforestationSchema(BaseModel):
     id: str = Field(..., description="MongoDB internal ID of the deforestation record")
@@ -88,7 +88,7 @@ _inner_router = generate_read_only_router(
 )
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_token)]
 )
 
 router.include_router(_inner_router)

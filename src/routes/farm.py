@@ -16,7 +16,8 @@ from datetime import datetime
 from ganabosques_orm.enums.source import Source
 from ganabosques_orm.enums.farmsource import FarmSource
 
-from src.dependencies.auth_guard import require_admin  
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 
 class FarmSchema(BaseModel):
@@ -177,7 +178,7 @@ valid_sources_str = ", ".join([s.value for s in Source])
 
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]  
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.FARM, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

@@ -10,7 +10,8 @@ from src.tools.utils import parse_object_ids, convert_doc_to_json
 
 from ganabosques_orm.enums.ugg import UGG
 from ganabosques_orm.enums.species import Species
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 
 class BufferPolygonSchema(BaseModel):
@@ -126,7 +127,7 @@ def get_farmpolygons_by_farm_ids(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.FARM, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

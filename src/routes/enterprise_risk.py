@@ -16,11 +16,12 @@ from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.adm1 import Adm1
 from ganabosques_orm.collections.adm2 import Adm2
 
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 router = APIRouter(
     tags=["Enterprise Risk"],
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ENTERPRISE, "option": "read"}]))]
 )
 
 MAX_IDS = 500

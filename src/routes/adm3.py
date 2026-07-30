@@ -8,12 +8,12 @@ from ganabosques_orm.collections.adm2 import Adm2
 from ganabosques_orm.collections.adm3 import Adm3
 from src.tools.pagination import build_paginated_response, PaginatedResponse
 from src.tools.utils import parse_object_ids, build_search_query
-from src.dependencies.auth_guard import  require_admin
+from src.dependencies.auth_guard import  require_token
 
 router = APIRouter(
     prefix="/adm3",
     tags=["Admin levels"],
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_token)]
 )
 
 class Adm3Schema(BaseModel):
