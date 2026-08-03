@@ -6,7 +6,8 @@ from datetime import datetime
 
 from ganabosques_orm.collections.analysis import Analysis
 from src.routes.base_route import generate_read_only_router
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 from ganabosques_orm.enums.valuechain import ValueChain
 
 print(ValueChain)
@@ -145,7 +146,7 @@ def get_all(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

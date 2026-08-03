@@ -20,7 +20,8 @@ from src.routes.base_route import generate_read_only_router
 from src.routes.enterprise import EnterpriseSchema
 from src.routes.farm import FarmSchema
 from src.tools.utils import parse_object_ids, build_search_query, convert_doc_to_json
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 
 class ClassificationSchema(BaseModel):
@@ -596,7 +597,7 @@ def get_movement_statistics_by_enterpriseid(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

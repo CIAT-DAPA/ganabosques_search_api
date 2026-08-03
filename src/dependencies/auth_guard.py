@@ -40,50 +40,58 @@ def require_admin(
 
 
 def require_permissions(
-    required_actions: Optional[List[str]] = None,
-    required_options: Optional[List[str]] = None,
-    require_all_actions: bool = True,
-    require_all_options: bool = True
+    permissions: List[dict],
+    require_all: bool = False,
 ):
     """
-    Dependency factory para requerir permisos específicos.
-    Retorna una función de validación que puede ser usada con Depends().
-    
-    Args:
-        required_actions: Lista de acciones requeridas (ej: ["API_FARMS", "API_ENTERPRISE"])
-        required_options: Lista de opciones requeridas (ej: ["READ", "CREATE"])
-        require_all_actions: Si True, debe tener TODAS las acciones. Si False, al menos una.
-        require_all_options: Si True, debe tener TODAS las opciones. Si False, al menos una.
-    
-    Returns:
-        Función de validación para usar con Depends()
-    
-    Example:
-        @router.get("/farms", dependencies=[Depends(require_permissions(
-            required_actions=["API_FARMS"],
-            required_options=["READ"]
-        ))])
-        def get_farms(): ...
+    Requiere varios permisos.
+
+    permissions = [
+
+        {
+            "actions": PermissionGroups.FARMS,
+            "option": Options.READ
+        },
+
+        {
+            "actions": PermissionGroups.ENTERPRISE,
+            "option": Options.UPDATE
+        }
+
+    ]
+
+    require_all=True
+
+        Debe cumplir todos.
+
+    require_all=False
+
+        Debe cumplir al menos uno.
     """
-    def permission_checker(validation_result: dict = Depends(require_token)):
+
+    def permission_checker(
+        validation_result: dict = Depends(require_token)
+    ):
+
         user_db = validation_result["payload"].get("user_db", {})
+
         user_ext_id = user_db.get("ext_id")
-        
+
         if not user_ext_id:
-            raise HTTPException(status_code=401, detail="User not found")
-        
+            raise HTTPException(
+                status_code=401,
+                detail="User not found"
+            )
+        #print(f"[require_permissions] User: {user_db}, Permissions: {permissions}, Require all: {require_all}")
+
         if not user_has_permissions(
-            user_ext_id,
-            required_actions=required_actions,
-            required_options=required_options,
-            require_all_actions=require_all_actions,
-            require_all_options=require_all_options
+            user_db,
+            permissions,
+            require_all
         ):
             raise HTTPException(
                 status_code=403,
                 detail="Insufficient permissions"
             )
-        
         return validation_result
-    
     return permission_checker

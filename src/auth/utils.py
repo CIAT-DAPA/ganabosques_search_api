@@ -1,284 +1,261 @@
 from typing import Union, List, Optional, Dict
 from bson import ObjectId
+
 from ganabosques_orm.collections.user import User
-from ganabosques_orm.collections.role import Role
 from ganabosques_orm.enums.actions import Actions
 from ganabosques_orm.enums.options import Options
 
 
-def get_user_roles(user_identifier: Union[str, ObjectId]) -> List[Dict]:
+def _build_permission_index(user: User) -> Dict:
     """
-    Obtiene los roles de un usuario con sus acciones y opciones.
-    
-    Args:
-        user_identifier: Puede ser ext_id (string de Keycloak) o id de MongoDB (ObjectId o string)
-    
-    Returns:
-        Lista de diccionarios con estructura: 
-        [{"name": "rol_name", "actions": [...], "options": [...]}]
+    Construye un índice de permisos del usuario.
     """
-    # Buscar usuario por ext_id o por _id
-    if isinstance(user_identifier, str) and len(user_identifier) == 24:
-        try:
-            user = User.objects(id=ObjectId(user_identifier)).first()
-        except:
-            user = User.objects(ext_id=user_identifier).first()
-    else:
-        user = User.objects(ext_id=str(user_identifier)).first()
-    
-    if not user:
-        return []
-    
+
+    index = {
+        "admin": bool(user.admin),
+        "roles": [],
+        "actions": set(),
+        "permissions": {},
+    }
+
     if not user.role:
-        return []
-    
-    roles_data = []
-    for role_ref in user.role:
-        role = Role.objects(id=role_ref.id).first()
-        if role:
-            roles_data.append({
-                "id": str(role.id),
-                "name": role.name,
-                "actions": [action.value for action in (role.actions or [])],
-                "options": [option.value for option in (role.options or [])]
-            })
-    
-    return roles_data
+        return index
+
+    for role in user.role:
+
+        serialized_role = {
+            "id": str(role.id),
+            "name": role.name,
+            "actions": [],
+        }
+
+        for permission in role.actions or []:
+
+            action = permission.action.value
+
+            options = {option.value for option in (permission.options or [])}
+
+            serialized_role["actions"].append(
+                {
+                    "action": action,
+                    "options": sorted(options),
+                }
+            )
+
+            index["actions"].add(action)
+
+            if action not in index["permissions"]:
+                index["permissions"][action] = set()
+
+            index["permissions"][action].update(options)
+
+        index["roles"].append(serialized_role)
+
+    return index
 
 
 def get_user_by_identifier(user_identifier: Union[str, ObjectId]) -> Optional[User]:
     """
-    Obtiene un usuario por ext_id o id de MongoDB.
-    
-    Args:
-        user_identifier: ext_id (string de Keycloak) o id de MongoDB
-    
-    Returns:
-        Objeto User o None si no existe
+    Obtiene un usuario por ext_id o id Mongo.
     """
+
+    if isinstance(user_identifier, ObjectId):
+        return User.objects(id=user_identifier).first()
+
     if isinstance(user_identifier, str) and len(user_identifier) == 24:
         try:
             return User.objects(id=ObjectId(user_identifier)).first()
-        except:
-            return User.objects(ext_id=user_identifier).first()
-    else:
-        return User.objects(ext_id=str(user_identifier)).first()
+        except Exception:
+            pass
+
+    return User.objects(ext_id=str(user_identifier)).first()
 
 
 def user_is_admin(user_identifier: Union[str, ObjectId]) -> bool:
     """
     Verifica si un usuario es administrador.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-    
-    Returns:
-        True si es admin, False en caso contrario
     """
     user = get_user_by_identifier(user_identifier)
-    return user.admin if user and user.admin else False
+    return bool(user and user.admin)
 
 
-def user_has_permissions(
-    user_identifier: Union[str, ObjectId],
-    required_actions: Optional[List[Union[str, Actions]]] = None,
-    required_options: Optional[List[Union[str, Options]]] = None,
-    require_all_actions: bool = True,
-    require_all_options: bool = True
+def get_user_roles(user_identifier: Union[str, ObjectId]) -> List[Dict]:
+    """
+    Obtiene los roles serializados.
+    """
+    user = get_user_by_identifier(user_identifier)
+
+    if not user:
+        return []
+    return _build_permission_index(user)["roles"]
+
+def user_has_action(
+    user_db: Dict,
+    actions: Union[str, Actions, List[str], List[Actions]],
 ) -> bool:
     """
-    Verifica si un usuario tiene los permisos requeridos.
-    
-    IMPORTANTE: Cuando se requieren AMBOS actions y options, valida que exista 
-    AL MENOS UN ROL que contenga las actions Y options requeridas juntas.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-        required_actions: Lista de acciones requeridas (puede ser strings o enums)
-        required_options: Lista de opciones requeridas (puede ser strings o enums)
-        require_all_actions: Si True, debe tener TODAS las acciones. Si False, al menos una.
-        require_all_options: Si True, debe tener TODAS las opciones. Si False, al menos una.
-    
-    Returns:
-        True si tiene los permisos, False en caso contrario
-    
-    Examples:
-        >>> user_has_permissions("user_id", required_actions=["API_FARMS"], required_options=["READ"])
-        >>> user_has_permissions("user_id", required_actions=[Actions.API_FARMS], require_all_actions=False)
+    Verifica si posee alguna de las acciones.
     """
-    user = get_user_by_identifier(user_identifier)
-    
-    if not user:
+
+    if not user_db:
         return False
-    
-    # Si es admin, tiene todos los permisos
-    if user.admin:
+
+    if user_db.get("admin", False):
         return True
-    
-    # Obtener todos los permisos del usuario
-    roles = get_user_roles(user_identifier)
-    
-    if not roles:
+
+    if not isinstance(actions, (list, tuple, set)):
+        actions = [actions]
+
+    actions = {
+        action.value if isinstance(action, Actions) else action for action in actions
+    }
+
+    user_actions = set(user_db.get("actions", []))
+
+    return bool(user_actions & actions)
+
+def user_has_permission(
+    user_db: Dict,
+    actions: Union[str, Actions, List[str], List[Actions]],
+    option: Union[str, Options],
+) -> bool:
+    """
+    Verifica si posee una opción sobre alguna acción.
+    """
+
+    if not user_db:
         return False
-    
-    # Convertir enums a strings
-    required_actions_str = None
-    if required_actions:
-        required_actions_str = [
-            action.value if isinstance(action, Actions) else action 
-            for action in required_actions
-        ]
-    
-    required_options_str = None
-    if required_options:
-        required_options_str = [
-            option.value if isinstance(option, Options) else option 
-            for option in required_options
-        ]
-    
-    # CASO 1: Se requieren AMBOS actions y options
-    # Debe existir AL MENOS UN rol que tenga ambos juntos
-    if required_actions_str and required_options_str:
-        for role in roles:
-            role_actions = set(role.get("actions", []))
-            role_options = set(role.get("options", []))
-            
-            # Verificar si este rol cumple con las actions requeridas
-            if require_all_actions:
-                has_actions = all(action in role_actions for action in required_actions_str)
-            else:
-                has_actions = any(action in role_actions for action in required_actions_str)
-            
-            # Verificar si este rol cumple con las options requeridas
-            if require_all_options:
-                has_options = all(option in role_options for option in required_options_str)
-            else:
-                has_options = any(option in role_options for option in required_options_str)
-            
-            # Si este rol tiene ambos, el usuario tiene permiso
-            if has_actions and has_options:
-                return True
-        
-        # Ningún rol tiene ambos juntos
-        return False
-    
-    # CASO 2: Solo se requieren actions (sin options)
-    elif required_actions_str:
-        user_actions = set()
-        for role in roles:
-            user_actions.update(role.get("actions", []))
-        
-        if require_all_actions:
-            return all(action in user_actions for action in required_actions_str)
-        else:
-            return any(action in user_actions for action in required_actions_str)
-    
-    # CASO 3: Solo se requieren options (sin actions)
-    elif required_options_str:
-        user_options = set()
-        for role in roles:
-            user_options.update(role.get("options", []))
-        
-        if require_all_options:
-            return all(option in user_options for option in required_options_str)
-        else:
-            return any(option in user_options for option in required_options_str)
-    
-    # CASO 4: No se requiere nada (solo valida que tenga token válido)
-    return True
 
+    if user_db.get("admin", False):
+        return True
 
-def user_has_action(user_identifier: Union[str, ObjectId], action: Union[str, Actions]) -> bool:
-    """
-    Verifica si un usuario tiene una acción específica.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-        action: Acción a verificar (string o enum)
-    
-    Returns:
-        True si tiene la acción, False en caso contrario
-    """
-    return user_has_permissions(user_identifier, required_actions=[action])
+    if not isinstance(actions, (list, tuple, set)):
+        actions = [actions]
 
+    actions = [
+        action.value if isinstance(action, Actions) else action for action in actions
+    ]
 
-def user_has_option(user_identifier: Union[str, ObjectId], option: Union[str, Options]) -> bool:
+    option = option.value if isinstance(option, Options) else option
+
+    permissions = {
+        permission["action"]: set(permission["options"])
+        for permission in user_db.get("permissions", [])
+    }
+
+    for action in actions:
+
+        if option in permissions.get(action, set()):
+            return True
+
+    return False
+
+def user_has_permissions(
+    user_db: Dict,
+    permissions: List[Dict],
+    require_all: bool = False,
+) -> bool:
     """
-    Verifica si un usuario tiene una opción específica.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-        option: Opción a verificar (string o enum)
-    
-    Returns:
-        True si tiene la opción, False en caso contrario
+    Verifica uno o varios permisos.
+
+    permissions = [
+
+        {
+            "actions": PermissionGroups.FARM,
+            "option": Options.READ
+        },
+
+        {
+            "actions": PermissionGroups.ENTERPRISE,
+            "option": Options.UPDATE
+        }
+
+    ]
     """
-    return user_has_permissions(user_identifier, required_options=[option])
+
+    if not permissions:
+        return True
+
+    results = [
+        user_has_permission(
+            user_db,
+            permission["actions"],
+            permission["option"],
+        )
+        for permission in permissions
+    ]
+
+    return all(results) if require_all else any(results)
 
 
 def get_user_actions(user_identifier: Union[str, ObjectId]) -> List[str]:
     """
-    Obtiene todas las acciones únicas de un usuario.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-    
-    Returns:
-        Lista de strings con las acciones
+    Obtiene todas las acciones.
     """
-    roles = get_user_roles(user_identifier)
-    actions = set()
-    for role in roles:
-        actions.update(role.get("actions", []))
-    return list(actions)
+
+    user = get_user_by_identifier(user_identifier)
+
+    if not user:
+        return []
+
+    index = _build_permission_index(user)
+
+    return sorted(index["actions"])
 
 
-def get_user_options(user_identifier: Union[str, ObjectId]) -> List[str]:
+def get_user_permissions(user_identifier: Union[str, ObjectId]) -> List[Dict]:
     """
-    Obtiene todas las opciones únicas de un usuario.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-    
-    Returns:
-        Lista de strings con las opciones
+    Obtiene todos los permisos agrupados por acción.
     """
-    roles = get_user_roles(user_identifier)
-    options = set()
-    for role in roles:
-        options.update(role.get("options", []))
-    return list(options)
+
+    user = get_user_by_identifier(user_identifier)
+
+    if not user:
+        return []
+
+    index = _build_permission_index(user)
+
+    return [
+        {
+            "action": action,
+            "options": sorted(list(options)),
+        }
+        for action, options in index["permissions"].items()
+    ]
 
 
 def serialize_user_permissions(user_identifier: Union[str, ObjectId]) -> Dict:
     """
-    Serializa toda la información de permisos de un usuario.
-    
-    Args:
-        user_identifier: ext_id o id de MongoDB
-    
-    Returns:
-        Diccionario con estructura completa de permisos
+    Serializa toda la información del usuario para
+    guardarla dentro del token validado.
     """
+
     user = get_user_by_identifier(user_identifier)
-    
+
     if not user:
+
         return {
             "id": None,
             "ext_id": None,
             "admin": False,
             "roles": [],
-            "all_actions": [],
-            "all_options": []
+            "actions": [],
+            "permissions": [],
         }
-    
-    roles = get_user_roles(user_identifier)
-    
+
+    index = _build_permission_index(user)
+
     return {
         "id": str(user.id),
         "ext_id": user.ext_id,
-        "admin": user.admin if user.admin else False,
-        "roles": roles,
-        "all_actions": get_user_actions(user_identifier),
-        "all_options": get_user_options(user_identifier)
+        "admin": index["admin"],
+        "roles": index["roles"],
+        "actions": sorted(index["actions"]),
+        "permissions": [
+            {
+                "action": action,
+                "options": sorted(list(options)),
+            }
+            for action, options in index["permissions"].items()
+        ],
     }

@@ -4,7 +4,8 @@ from fastapi import Depends, APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 from ganabosques_orm.collections.farmrisk import FarmRisk
 from src.routes.base_route import generate_read_only_router
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 from src.tools.utils import parse_object_ids, convert_doc_to_json
 
 
@@ -121,7 +122,7 @@ def get_farmrisk_by_analysis_ids(
         )
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

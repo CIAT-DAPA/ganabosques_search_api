@@ -10,11 +10,12 @@ from ganabosques_orm.collections.analysis import Analysis
 from ganabosques_orm.collections.deforestation import Deforestation
 from ganabosques_orm.collections.adm3risk import Adm3Risk  
 
-from src.dependencies.auth_guard import require_admin 
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 router = APIRouter(
     tags=["Adm3 Risk"],
-    dependencies=[Depends(require_admin)]   
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ADM3, "option": "read"}]))]   
 )
 
 log = logging.getLogger("adm3risk_filtered")

@@ -10,11 +10,12 @@ from ganabosques_orm.collections.farmrisk import FarmRisk
 from ganabosques_orm.collections.farmpolygons import FarmPolygons
 from ganabosques_orm.collections.adm3 import Adm3
 
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 router = APIRouter(
     tags=["Farm Risk"],
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 PAGE_SIZE_DEFAULT = 20
