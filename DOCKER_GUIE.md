@@ -295,6 +295,10 @@ Verificar:
 ```bash
 docker exec -it ganabosques-api env | grep MONGO
 ```
+Si aparece `ServerSelectionTimeoutError`, revisa que `MONGO_URI` apunte a un host accesible desde el contenedor.
+
+Si MongoDB está corriendo en tu máquina local sobre Windows o macOS, `host.docker.internal` suele ser la opción correcta.
+
 
 Confirmar conectividad:
 
@@ -321,6 +325,8 @@ docker logs ganabosques-api
 ---
 
 ## Puerto ocupado
+
+Si el puerto `8000` está en uso, mapea el contenedor a otro puerto:
 
 Ejecutar en otro puerto:
 

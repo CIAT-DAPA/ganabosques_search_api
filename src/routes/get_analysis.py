@@ -2,11 +2,12 @@ from fastapi import HTTPException, APIRouter, Depends
 from bson import ObjectId
 
 from ganabosques_orm.collections.analysis import Analysis
-from src.dependencies.auth_guard import require_admin 
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups 
 
 router = APIRouter(
     tags=["Analysis"],
-    dependencies=[Depends(require_admin)] 
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 @router.get("/analysis/by-deforestation")

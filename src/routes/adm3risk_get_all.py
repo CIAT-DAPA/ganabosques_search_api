@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Literal, Optional, Tuple, Any
 from bson import ObjectId, DBRef
 
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 # Collections
 from ganabosques_orm.collections.adm3 import Adm3
@@ -26,7 +27,7 @@ from ganabosques_orm.collections.adm1 import Adm1
 
 router = APIRouter(
     tags=["Risk Global"],
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ADM3, "option": "read"}]))]
 )
 
 MAX_IDS = 500

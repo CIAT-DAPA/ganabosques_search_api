@@ -9,12 +9,12 @@ from enum import Enum
 from typing import List
 import re
 
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_token
 
 router = APIRouter(
     prefix="/enums",
     tags=["Enums"],
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_token)]
 )
 
 @router.get("/", response_model=List[str], summary="Get enumeration values", response_description="A list of enumeration values")

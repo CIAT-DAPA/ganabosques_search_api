@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field, ConfigDict
 from ganabosques_orm.collections.adm3risk import Adm3Risk
 
 from src.routes.base_route import generate_read_only_router
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 
 class Adm3RiskSchema(BaseModel):
@@ -41,7 +42,7 @@ _inner_router = generate_read_only_router(
 )
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ANALYSIS, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)

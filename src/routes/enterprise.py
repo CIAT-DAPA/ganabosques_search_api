@@ -16,7 +16,8 @@ from datetime import datetime
 from ganabosques_orm.enums.typeenterprise import TypeEnterprise
 from ganabosques_orm.enums.label import Label
 
-from src.dependencies.auth_guard import require_admin
+from src.dependencies.auth_guard import require_permissions
+from src.dependencies.permissions_groups import PermissionGroups
 
 
 class EnterpriseSchema(BaseModel):
@@ -120,7 +121,7 @@ def get_enterprise_by_adm2_ids(
 
 
 router = APIRouter(
-    dependencies=[Depends(require_admin)] 
+    dependencies=[Depends(require_permissions(permissions=[{"actions": PermissionGroups.ENTERPRISE, "option": "read"}]))]
 )
 
 router.include_router(_inner_router)
